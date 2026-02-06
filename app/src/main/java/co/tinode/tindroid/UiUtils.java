@@ -890,10 +890,11 @@ public class UiUtils {
                     int errCode = sre.getCode();
                     // 401: attempt to subscribe to 'me' happened before login, do not log out.
                     // 403: Does not apply to 'me' subscription.
-                    if (errCode == 404) {
+                    if (errCode == ServerMessage.STATUS_NOT_FOUND) {
                         doLogout(activity);
                         activity.finish();
-                    } else if (errCode == 502 && "cluster unreachable".equals(sre.getMessage())) {
+                    } else if (errCode == ServerMessage.STATUS_BAD_GATEWAY &&
+                            "cluster unreachable".equals(sre.getMessage())) {
                         // Must reset connection.
                         Cache.getTinode().reconnectNow(false, true, false);
                     }
@@ -1110,7 +1111,7 @@ public class UiUtils {
     static public @NonNull List<String> getRequiredCredMethods(@NonNull Tinode tinode,
                                                                @NonNull String forAuthLevel) {
         // "auth:email,tel;anon:none"
-        Object credObj = tinode.getServerParam("reqCred");
+        Object credObj = tinode.getServerParam(Tinode.REQ_CRED_VALIDATORS);
         ArrayList<String> methods = new ArrayList<>();
         if (credObj instanceof Map) {
             Object methodsObj = ((Map) credObj).get(forAuthLevel);
