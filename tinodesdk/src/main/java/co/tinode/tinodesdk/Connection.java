@@ -118,7 +118,12 @@ public class Connection extends WebSocketClient {
 
                 if ("wss".equals(uri.getScheme())) {
                     // SNI: Verify server host name.
-                    SSLSession sess = ((SSLSocket) getSocket()).getSession();
+                    SSLSocket socket = (SSLSocket) getSocket();
+                    if (socket == null) {
+                        close();
+                        throw new SSLHandshakeException("No SSL socket available");
+                    }
+                    SSLSession sess = socket.getSession();
                     String hostName = uri.getHost();
                     if (!HttpsURLConnection.getDefaultHostnameVerifier().verify(hostName, sess)) {
                         close();

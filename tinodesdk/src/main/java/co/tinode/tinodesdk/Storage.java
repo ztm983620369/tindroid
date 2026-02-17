@@ -7,6 +7,7 @@ import java.util.Iterator;
 import java.util.Map;
 
 import co.tinode.tinodesdk.model.Drafty;
+import co.tinode.tinodesdk.model.MsgOneReaction;
 import co.tinode.tinodesdk.model.MsgRange;
 import co.tinode.tinodesdk.model.MsgServerData;
 import co.tinode.tinodesdk.model.Subscription;
@@ -196,6 +197,17 @@ public interface Storage {
     boolean msgReadByRemote(Subscription sub, int read);
 
     /**
+     * Update message reactions in the database.
+     *
+     * @param topic topic containing the message.
+     * @param seq message sequence ID.
+     * @param reactions array of reactions to store.
+     * @return true on success, false otherwise
+     */
+    @SuppressWarnings("UnusedReturnValue")
+    boolean msgUpdateReactions(Topic topic, int seq, MsgOneReaction[] reactions);
+
+    /**
      * Returns message ranges present in DB.
      *
      * @param topic topic to query.
@@ -268,6 +280,9 @@ public interface Storage {
         Drafty getContent();
         /** Set message payload */
         void setContent(Drafty content);
+
+        /** Get message reactions */
+        MsgOneReaction[] getReactions();
 
         /** Get current message unique ID (database ID) */
         long getDbId();

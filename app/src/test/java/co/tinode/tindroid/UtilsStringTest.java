@@ -229,4 +229,147 @@ public class UtilsStringTest {
         assertEquals("1234567890", UtilsString.asPhone("12-345-678-90")); // e.g. 2-3-3-2 instead of 3-3-2-2
         assertNull(UtilsString.asPhone("1234-567-890"));
     }
+
+    // --- shortenCount Tests ---
+
+    @Test
+    public void shortenCount_zeroCount_returnsZeroString() {
+        assertEquals("0", UtilsString.shortenCount(0));
+    }
+
+    @Test
+    public void shortenCount_singleDigit_returnsAsIs() {
+        assertEquals("5", UtilsString.shortenCount(5));
+        assertEquals("9", UtilsString.shortenCount(9));
+    }
+
+    @Test
+    public void shortenCount_twoDigits_returnsAsIs() {
+        assertEquals("42", UtilsString.shortenCount(42));
+        assertEquals("99", UtilsString.shortenCount(99));
+    }
+
+    @Test
+    public void shortenCount_threeDigits_returnsAsIs() {
+        assertEquals("999", UtilsString.shortenCount(999));
+    }
+
+    @Test
+    public void shortenCount_exactlyOneThousand_returnsWithKSuffix() {
+        // 1000 is NOT < 1000, so it falls into the 1000-9999 range
+        assertEquals("1.0K", UtilsString.shortenCount(1000));
+    }
+
+    @Test
+    public void shortenCount_belowOneThousand_returnsAsIs() {
+        // Values < 1000 return as-is
+        assertEquals("999", UtilsString.shortenCount(999));
+        assertEquals("500", UtilsString.shortenCount(500));
+    }
+
+    @Test
+    public void shortenCount_belowTenThousand_returnsWithKSuffix() {
+        // Range 1000 - 9999: format as X.XK
+        assertEquals("1.5K", UtilsString.shortenCount(1500));
+        assertEquals("2.5K", UtilsString.shortenCount(2500));
+        assertEquals("9.9K", UtilsString.shortenCount(9900));
+    }
+
+    @Test
+    public void shortenCount_oneThousandTwoHundred_returnsWithKSuffix() {
+        assertEquals("1.2K", UtilsString.shortenCount(1200));
+    }
+
+    @Test
+    public void shortenCount_exactlyNineThousandNineHundredNinetryNine_returnsWithKSuffix() {
+        assertEquals("10.0K", UtilsString.shortenCount(9999));
+    }
+
+    @Test
+    public void shortenCount_tenThousand_returnsWithKSuffixNoDecimals() {
+        // Range 10000 - 999999: format as XXK (no decimals)
+        assertEquals("10K", UtilsString.shortenCount(10000));
+    }
+
+    @Test
+    public void shortenCount_fiftyThousand_returnsWithKSuffixNoDecimals() {
+        assertEquals("50K", UtilsString.shortenCount(50000));
+    }
+
+    @Test
+    public void shortenCount_nineHundredNinetryNineThousand_returnsWithKSuffixNoDecimals() {
+        assertEquals("999K", UtilsString.shortenCount(999000));
+    }
+
+    @Test
+    public void shortenCount_exactlyOneMillion_returnsWithMSuffix() {
+        // Range >= 1000000: format as X.XM
+        assertEquals("1.0M", UtilsString.shortenCount(1000000));
+    }
+
+    @Test
+    public void shortenCount_twoPointFiveMillion_returnsWithMSuffix() {
+        assertEquals("2.5M", UtilsString.shortenCount(2500000));
+    }
+
+    @Test
+    public void shortenCount_tenMillion_returnsWithMSuffix() {
+        assertEquals("10.0M", UtilsString.shortenCount(10000000));
+    }
+
+    @Test
+    public void shortenCount_fiveHundredMillion_returnsWithMSuffix() {
+        assertEquals("500.0M", UtilsString.shortenCount(500000000));
+    }
+
+    @Test
+    public void shortenCount_oneBillion_returnsWithMSuffix() {
+        assertEquals("1000.0M", UtilsString.shortenCount(1000000000));
+    }
+
+    @Test
+    public void shortenCount_negativeNumber_returnsAsIs() {
+        // The method doesn't explicitly handle negative numbers, so it returns them as-is
+        assertEquals("-1", UtilsString.shortenCount(-1));
+        assertEquals("-500", UtilsString.shortenCount(-500));
+    }
+
+    @Test
+    public void shortenCount_boundaryBetweenThousandsAndMillions_returnsCorrectFormat() {
+        // Just below 1 million
+        assertEquals("999K", UtilsString.shortenCount(999000));
+        // Just at 1 million
+        assertEquals("1.0M", UtilsString.shortenCount(1000000));
+    }
+
+    @Test
+    public void shortenCount_boundaryBetweenRawAndThousands_returnsCorrectFormat() {
+        // Just below 1000
+        assertEquals("999", UtilsString.shortenCount(999));
+        // Just at 1000 and above - uses K format
+        assertEquals("1.0K", UtilsString.shortenCount(1000));
+        assertEquals("1.0K", UtilsString.shortenCount(1001));
+    }
+
+    @Test
+    public void shortenCount_decimalCasesInKRange_returnsOneDecimalPlace() {
+        assertEquals("1.1K", UtilsString.shortenCount(1100));
+        assertEquals("1.2K", UtilsString.shortenCount(1200));
+        assertEquals("1.3K", UtilsString.shortenCount(1300));
+        assertEquals("5.7K", UtilsString.shortenCount(5700));
+    }
+
+    @Test
+    public void shortenCount_zeroDecimalCasesInKRange_returnsOneDecimalPlace() {
+        // Even X.0K should show the decimal place based on String.format behavior
+        assertEquals("1.0K", UtilsString.shortenCount(1000));
+        assertEquals("2.0K", UtilsString.shortenCount(2000));
+    }
+
+    @Test
+    public void shortenCount_largeCounts_formattedCorrectly() {
+        assertEquals("123K", UtilsString.shortenCount(123000));
+        assertEquals("456K", UtilsString.shortenCount(456000));
+        assertEquals("12.3M", UtilsString.shortenCount(12300000));
+    }
 }

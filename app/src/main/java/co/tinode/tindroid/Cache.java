@@ -171,7 +171,8 @@ public class Cache {
         } else if (!sInstance.mCallInProgress.equals(topic, seq)) {
             // Include stacktrace to identify the caller which attempted to start a conflicting call.
             throw new IllegalStateException("prepareNewCall called while another call is in progress"  +
-                    "\n\tNew: " + topic + ":" + seq);
+                    "\n\tNew: " + topic + ":" + seq +
+                    "\n\tOld: " + sInstance.mCallInProgress.toString());
         }
     }
 

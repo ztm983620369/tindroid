@@ -110,19 +110,19 @@ dependencies {
 
     implementation 'com.android.installreferrer:installreferrer:2.2'
 
-    def media3_version = '1.6.1'
+    def media3_version = '1.9.2'
     implementation "androidx.media3:media3-exoplayer:${media3_version}"
     implementation "androidx.media3:media3-ui:${media3_version}"
     implementation "androidx.media3:media3-datasource:${media3_version}"
     implementation 'com.google.android.flexbox:flexbox:3.0.0'
-    implementation 'com.google.android.gms:play-services-oss-licenses:17.3.0'
+    implementation 'com.google.android.gms:play-services-oss-licenses:17.4.0'
     implementation 'com.google.android.material:material:1.13.0'
     implementation 'com.google.firebase:firebase-core:21.1.1'
     implementation 'com.google.firebase:firebase-crashlytics:20.0.4'
     implementation 'com.google.firebase:firebase-messaging:25.0.1'
     implementation 'com.google.mlkit:barcode-scanning:17.3.0'
 
-    implementation 'com.googlecode.libphonenumber:libphonenumber:9.0.22'
+    implementation 'com.googlecode.libphonenumber:libphonenumber:9.0.23'
 
     // WebRTC.
     implementation 'com.dafruits:webrtc:123.0.0'

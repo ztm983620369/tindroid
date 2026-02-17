@@ -101,6 +101,10 @@ public class MessageDb implements BaseColumns {
      */
     private static final String COLUMN_NAME_CONTENT = "content";
     /**
+     * Serialized message reactions (array of MsgOneReaction)
+     */
+    private static final String COLUMN_NAME_REACTIONS = "reactions";
+    /**
      * SQL statement to create Messages table
      */
     static final String CREATE_TABLE =
@@ -120,7 +124,8 @@ public class MessageDb implements BaseColumns {
                     COLUMN_NAME_EFFECTIVE_TS + " INT," +
                     COLUMN_NAME_EFFECTIVE_SEQ + " INT," +
                     COLUMN_NAME_HEAD + " TEXT," +
-                    COLUMN_NAME_CONTENT + " TEXT)";
+                    COLUMN_NAME_CONTENT + " TEXT," +
+                    COLUMN_NAME_REACTIONS + " TEXT)";
 
     static final int COLUMN_IDX_ID = 0;
     static final int COLUMN_IDX_TOPIC_ID = 1;
@@ -136,8 +141,9 @@ public class MessageDb implements BaseColumns {
     static final int COLUMN_IDX_EFFECTIVE_SEQ = 11;
     static final int COLUMN_IDX_HEAD = 12;
     static final int COLUMN_IDX_CONTENT = 13;
+    static final int COLUMN_IDX_REACTIONS = 14;
     // Used in JOIN.
-    static final int COLUMN_IDX_TOPIC_NAME = 14;
+    static final int COLUMN_IDX_TOPIC_NAME = 15;
 
     /**
      * SQL statement to drop Messages table.
@@ -290,6 +296,7 @@ public class MessageDb implements BaseColumns {
         }
         values.put(COLUMN_NAME_HEAD, BaseDb.serialize(msg.head));
         values.put(COLUMN_NAME_CONTENT, BaseDb.serialize(msg.content));
+        values.put(COLUMN_NAME_REACTIONS, BaseDb.serialize(msg.react));
 
         return db.insertOrThrow(TABLE_NAME, null, values);
     }
@@ -307,6 +314,23 @@ public class MessageDb implements BaseColumns {
             return db.update(TABLE_NAME, values, _ID + "=" + msgId, null) > 0;
         }
         return false;
+    }
+
+    /**
+     * Update message reactions by topic ID and sequence number.
+     *
+     * @param db database to use
+     * @param topicId topic ID
+     * @param seq message sequence number
+     * @param reactions serialized reactions array
+     * @return true if update was successful
+     */
+    static boolean updateReactions(SQLiteDatabase db, long topicId, int seq, Object reactions) {
+        ContentValues values = new ContentValues();
+        values.put(COLUMN_NAME_REACTIONS, BaseDb.serialize(reactions));
+        return db.update(TABLE_NAME, values,
+                COLUMN_NAME_TOPIC_ID + "=" + topicId + " AND " + COLUMN_NAME_SEQ + "=" + seq,
+                null) > 0;
     }
 
     static void delivered(SQLiteDatabase db, long msgId, Date timestamp, int seq) {

@@ -17,6 +17,7 @@ import co.tinode.tinodesdk.Tinode;
 import co.tinode.tinodesdk.Topic;
 import co.tinode.tinodesdk.User;
 import co.tinode.tinodesdk.model.Drafty;
+import co.tinode.tinodesdk.model.MsgOneReaction;
 import co.tinode.tinodesdk.model.MsgRange;
 import co.tinode.tinodesdk.model.MsgServerData;
 import co.tinode.tinodesdk.model.Subscription;
@@ -497,6 +498,15 @@ public class SqlStore implements Storage {
             result = SubscriberDb.updateRead(mDbh.getWritableDatabase(), ss.id, read);
         }
         return result;
+    }
+
+    @Override
+    public boolean msgUpdateReactions(Topic topic, int seq, MsgOneReaction[] reactions) {
+        StoredTopic st = (StoredTopic) topic.getLocal();
+        if (st == null || st.id <= 0) {
+            return false;
+        }
+        return MessageDb.updateReactions(mDbh.getWritableDatabase(), st.id, seq, reactions);
     }
 
     private <T extends Storage.Message> T messageById(long dbMessageId, int previewLength) {

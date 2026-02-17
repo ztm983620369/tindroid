@@ -7,6 +7,7 @@ import java.util.Map;
 
 import co.tinode.tinodesdk.Storage;
 import co.tinode.tinodesdk.model.Drafty;
+import co.tinode.tinodesdk.model.MsgOneReaction;
 import co.tinode.tinodesdk.model.MsgRange;
 import co.tinode.tinodesdk.model.MsgServerData;
 
@@ -31,6 +32,7 @@ public class StoredMessage extends MsgServerData implements Storage.Message {
         ts = m.ts;
         seq = m.seq;
         content = m.content;
+        react = m.react;
     }
 
     public static StoredMessage readMessage(Cursor c, int previewLength) {
@@ -52,6 +54,11 @@ public class StoredMessage extends MsgServerData implements Storage.Message {
             if (previewLength > 0 && msg.content != null) {
                 msg.content = msg.content.preview(previewLength);
             }
+        }
+        // Read reactions if column exists
+        if (c.getColumnCount() > MessageDb.COLUMN_IDX_REACTIONS) {
+            msg.react = BaseDb.deserializeArray(c.getString(MessageDb.COLUMN_IDX_REACTIONS)
+            );
         }
         if (c.getColumnCount() > MessageDb.COLUMN_IDX_TOPIC_NAME) {
             msg.topic = c.getString(MessageDb.COLUMN_IDX_TOPIC_NAME);
@@ -136,6 +143,11 @@ public class StoredMessage extends MsgServerData implements Storage.Message {
     @Override
     public boolean isSynced() {
         return status == BaseDb.Status.SYNCED;
+    }
+
+    @Override
+    public MsgOneReaction[] getReactions() {
+        return react;
     }
 
     public boolean isReplacement() {

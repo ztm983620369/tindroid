@@ -108,7 +108,11 @@ public class Tinode {
     public static final String MIN_TAG_LENGTH = "minTagLength";
     public static final String MAX_TAG_COUNT = "maxTagCount";
     public static final String MAX_FILE_UPLOAD_SIZE = "maxFileUploadSize";
+    public static final String REQ_CRED_VALIDATORS = "reqCred";
     public static final String MSG_DELETE_AGE = "msgDelAge";
+    public static final String REACTION_LIST = "reactions";
+    public static final String MAX_REACTIONS = "maxReactions";
+    public static final String ICE_SERVERS = "iceServers";
 
     private static final String[] SERVER_LIMITS = new String[]{
             MAX_MESSAGE_SIZE, MAX_SUBSCRIBER_COUNT, MAX_TAG_LENGTH, MIN_TAG_LENGTH,
@@ -265,7 +269,7 @@ public class Tinode {
                     if (fh.timestamp.before(expiration)) {
                         mFutures.remove(entry.getKey());
                         try {
-                            fh.future.reject(new ServerResponseException(504, "timeout id=" + entry.getKey()));
+                            fh.future.reject(new ServerResponseException(ServerMessage.STATUS_GATEWAY_TIMEOUT, "timeout id=" + entry.getKey()));
                         } catch (Exception ignored) {
                         }
                     }
@@ -839,7 +843,8 @@ public class Tinode {
         mBkgConnCounter = 0;
 
         // Reject all pending promises.
-        ServerResponseException ex = new ServerResponseException(503, "disconnected");
+        ServerResponseException ex =
+                new ServerResponseException(ServerMessage.STATUS_SERVICE_UNAVAILABLE, "disconnected");
         for (FutureHolder fh : mFutures.values()) {
             try {
                 fh.future.reject(ex);
@@ -851,7 +856,7 @@ public class Tinode {
 
         // Mark all topics as un-attached.
         for (Pair<Topic, ?> pair : mTopics.values()) {
-            pair.first.topicLeft(false, 503, "disconnected");
+            pair.first.topicLeft(false, ServerMessage.STATUS_SERVICE_UNAVAILABLE, "disconnected");
         }
 
         mNotifier.onDisconnect(byServer, code, reason);
@@ -2843,7 +2848,7 @@ public class Tinode {
             handleDisconnect(byServer, -code, reason);
             // Promises may have already been rejected if onError was called first.
             try {
-                rejectPromises(new ServerResponseException(503, "disconnected"));
+                rejectPromises(new ServerResponseException(ServerMessage.STATUS_SERVICE_UNAVAILABLE, "disconnected"));
             } catch (Exception ignored) {
                 // Don't throw an exception as no one can catch it.
             }

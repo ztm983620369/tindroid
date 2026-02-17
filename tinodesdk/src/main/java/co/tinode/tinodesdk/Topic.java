@@ -32,6 +32,7 @@ import co.tinode.tinodesdk.model.LastSeen;
 import co.tinode.tinodesdk.model.MetaSetDesc;
 import co.tinode.tinodesdk.model.MetaSetSub;
 import co.tinode.tinodesdk.model.MsgGetMeta;
+import co.tinode.tinodesdk.model.MsgOneReaction;
 import co.tinode.tinodesdk.model.MsgRange;
 import co.tinode.tinodesdk.model.MsgServerCtrl;
 import co.tinode.tinodesdk.model.MsgServerData;
@@ -1371,6 +1372,11 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
         return result;
     }
 
+    /**
+     * Get message by sequence ID.
+     * @param seq sequence ID
+     * @return message or null if not found
+     */
     public Storage.Message getMessage(int seq) {
         if (mStore == null) {
             return null;
@@ -1380,6 +1386,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
 
     /**
      * Query topic for data or metadata
+     * @return {@link PromisedReply} resolved on result of the operation.
      */
     public PromisedReply<ServerMessage> getMeta(MsgGetMeta query) {
         return mTinode.getMeta(getName(), query);
@@ -1388,6 +1395,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     /**
      * Update topic metadata
      *
+     * @return {@link PromisedReply} resolved on result of the operation.
      * @throws NotSubscribedException if the client is not subscribed to the topic
      * @throws NotConnectedException  if there is no connection to the server
      */
@@ -1406,6 +1414,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
      * Update topic description. Calls {@link #setMeta}.
      *
      * @param desc new description (public, private, default access)
+     * @return {@link PromisedReply} resolved on result of the operation.
      * @throws NotSubscribedException if the client is not subscribed to the topic
      * @throws NotConnectedException  if there is no connection to the server
      */
@@ -1419,6 +1428,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
      * @param pub  new public info
      * @param priv new private info
      * @param attachments URLs of out-of-band attachments contained in the values of pub (or priv).
+     * @return {@link PromisedReply} resolved on result of the operation.
      * @throws NotSubscribedException if the client is not subscribed to the topic
      * @throws NotConnectedException  if there is no connection to the server
      */
@@ -1433,6 +1443,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
      *
      * @param auth default access mode for authenticated users
      * @param anon default access mode for anonymous users
+     * @return {@link PromisedReply} resolved on result of the operation.
      * @throws NotSubscribedException if the client is not subscribed to the topic
      * @throws NotConnectedException  if there is no connection to the server
      */
@@ -1443,6 +1454,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     /**
      * Update subscription. Calls {@link #setMeta}.
      *
+     * @return {@link PromisedReply} resolved on result of the operation.
      * @throws NotSubscribedException if the client is not subscribed to the topic
      * @throws NotConnectedException  if there is no connection to the server
      */
@@ -1454,6 +1466,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
      * Update own access mode.
      *
      * @param update string which defines the update. It could be a full value or a change.
+     * @return {@link PromisedReply} resolved on result of the operation.
      */
     public PromisedReply<ServerMessage> updateMode(final String update) {
         return updateMode(null, update);
@@ -1464,6 +1477,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
      *
      * @param uid    UID of the user to update.
      * @param update string which defines the update. It could be a full value or a change.
+     * @return {@link PromisedReply} resolved on result of the operation.
      */
     public PromisedReply<ServerMessage> updateMode(String uid, final String update) {
         final Subscription sub;
@@ -1493,6 +1507,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     /**
      * Update tags.
      * @param tags new tags to send to the server.
+     * @return {@link PromisedReply} resolved on result of the operation.
      */
     public PromisedReply<ServerMessage> updateTags(String[] tags) {
         return setMeta(new MsgSetMeta.Builder<DP, DR>().with(tags).build());
@@ -1501,6 +1516,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     /**
      * Update tags.
      * @param tagList comma separated list of new tags to send to the server.
+     * @return {@link PromisedReply} resolved on result of the operation.
      */
     public PromisedReply<ServerMessage> updateTags(String tagList) {
         return updateTags(mTinode.parseTags(tagList));
@@ -1511,6 +1527,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
      *
      * @param uid  ID of the user to invite to topic
      * @param mode access mode granted to user
+     * @return {@link PromisedReply} resolved on result of the operation.
      */
     public PromisedReply<ServerMessage> invite(String uid, String mode) {
 
@@ -1562,6 +1579,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
      *
      * @param uid id of the user to unsubscribe from the topic
      * @param ban ban user (set mode.Given = 'N')
+     * @return {@link PromisedReply} resolved on result of the operation.
      */
     public PromisedReply<ServerMessage> eject(String uid, boolean ban) {
         final Subscription<SP, SR> sub = getSubscription(uid);
@@ -1600,6 +1618,123 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
             }
         });
     }
+
+    /**
+     * Return reactions for the message with the given seq id, if present.
+     * @param seq - message seq id.
+     * @return array of reactions or null if message has no reactions.
+     */
+    @Nullable
+    public MsgOneReaction[] msgReactions(int seq) {
+        Storage.Message msg = getMessage(seq);
+        if (msg == null) {
+            return null;
+        }
+        return msg.getReactions();
+    }
+
+    /**
+     * Return current user's reaction value for the given message.
+     * @param seq - message seq id.
+     * @return current user's reaction value or null.
+     */
+    @Nullable
+    public String msgMyReaction(int seq) {
+        MsgOneReaction[] reactions = msgReactions(seq);
+        if (reactions == null) {
+            return null;
+        }
+        String me = mTinode.getMyId();
+        for (MsgOneReaction reaction : reactions) {
+            if (reaction.users == null) {
+                continue;
+            }
+            if (Arrays.asList(reaction.users).contains(me)) {
+                return reaction.val;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Send or remove a reaction for a message in this topic.
+     * If the same reaction from the current user is already present, remove it.
+     *
+     * @param seq - ID of the message to react to.
+     * @param emo - Emoji string to add as reaction, or Tinode.DEL_CHAR to remove reaction.
+     * @return {@link PromisedReply} resolved on result of the operation.
+     */
+    public PromisedReply<ServerMessage> react(int seq, String emo) {
+        if (seq <= 0 || emo == null || emo.isEmpty()) {
+            return new PromisedReply<>(new IllegalArgumentException("Invalid parameters"));
+        }
+        String curr = msgMyReaction(seq);
+        if (emo.equals(curr)) {
+            // Treat the same value as a toggle.
+            emo = Tinode.NULL_VALUE;
+        }
+        return setMeta(new MsgSetMeta.Builder<DP, DR>().with(seq, emo).build());
+    }
+
+    /**
+     * Get a list of allowed reactions for this topic.
+     *
+     * @return Array of allowed reaction strings.
+     */
+    public String[] reactions() {
+        Object vals;
+        if (getAux("react") instanceof Map map) {
+            vals = map.get("vals");
+        } else {
+            vals = mTinode.getServerParam(Tinode.REACTION_LIST);
+        }
+
+        if (vals instanceof List list) {
+            List<String> stringList = new ArrayList<>();
+            for (Object obj : list) {
+                if (obj instanceof String) {
+                    stringList.add((String) obj);
+                }
+            }
+            if (!stringList.isEmpty()) {
+                return stringList.toArray(new String[]{});
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Get maximum number of allowed reaction types per message for this topic.
+     *
+     * @return maximum number of allowed reaction types per message.
+     */
+    public int maxReactions() {
+        Object max;
+        if (getAux("react") instanceof Map map) {
+            max = map.get("max");
+        } else {
+            max = mTinode.getServerParam(Tinode.MAX_REACTIONS);
+        }
+        if (max instanceof Number num) {
+            return num.intValue();
+        }
+        return 0;
+    }
+
+    /*
+     * Mark all known reactions as seen.
+     *
+    public void markReactionsSeen() {
+        if (this._mrrSeen != this.mrrid) {
+            this._mrrSeen = this.mrrid;
+            // Sent a notification to 'me' listeners.
+            MeTopic me = mTinode.getMeTopic();
+            if (me != null) {
+                me.;//_refreshContact('react', this);
+            }
+        }
+    }
+     */
 
     /**
      * Delete message range.

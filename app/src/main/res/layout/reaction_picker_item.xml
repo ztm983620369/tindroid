@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="44dp"
+    android:layout_height="44dp"
+    android:background="@drawable/reaction_picker_item_background"
+    android:clickable="true"
+    android:focusable="true">
+
+    <TextView
+        android:id="@+id/emoji"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:textSize="24sp"
+        tools:text="👍" />
+
+    <TextView
+        android:id="@+id/count"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end|bottom"
+        android:background="@drawable/reaction_count_badge"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:paddingTop="1dp"
+        android:paddingBottom="1dp"
+        android:textColor="@android:color/white"
+        android:textSize="10sp"
+        android:visibility="gone"
+        tools:text="5"
+        tools:visibility="visible" />
+
+</FrameLayout>

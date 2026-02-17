@@ -27,7 +27,7 @@ public class BaseDb extends SQLiteOpenHelper {
     /**
      * Schema version. Increment on schema changes.
      */
-    private static final int DATABASE_VERSION = 21;
+    private static final int DATABASE_VERSION = 22;
 
     /**
      * Filename for SQLite file.
@@ -169,6 +169,30 @@ public class BaseDb extends SQLiteOpenHelper {
                 return Tinode.jsonDeserialize(parts[1], parts[0]);
             } catch (ClassCastException ex) {
                 Log.w(TAG, "Failed to de-serialize", ex);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Parses serialized array of objects from "canonical_class_name[];json of array of objects"
+     *
+     * @param input string to parse
+     * @param <T>   type of the parsed array
+     * @return parsed array or null
+     */
+    @SuppressWarnings("unchecked")
+    static <T> T deserializeArray(String input) {
+        if (input != null) {
+            try {
+                String[] parts = input.split(";", 2);
+                if (parts.length == 2 && parts[0].endsWith("[]")) {
+                    // Deserializing an array.
+                    String className = parts[0].substring(0, parts[0].length() - 2);
+                    return (T) Tinode.jsonDeserializeArray(parts[1], className);
+                }
+            } catch (ClassCastException ex) {
+                Log.w(TAG, "Failed to de-serialize array", ex);
             }
         }
         return null;

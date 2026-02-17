@@ -6,7 +6,7 @@ import java.io.Serializable;
 import java.util.Map;
 
 /**
- * Payload for setting meta params, a combination of MetaSetDesc, MetaSetSub, tags, credential.
+ * Payload for setting meta params, a combination of MetaSetDesc, MetaSetSub, tags, credential, etc.
  * <p>
  * Must use custom serializer to handle assigned NULL values, which should be converted to Tinode.NULL_VALUE.
  */
@@ -16,6 +16,7 @@ public class MsgSetMeta<Pu,Pr> implements Serializable {
     static final int NULL_TAGS = 0x4;
     static final int NULL_CRED = 0x8;
     static final int NULL_AUX = 0x10;
+
     // Keep track of NULL assignments to fields.
     @JsonIgnore
     int nulls = 0;
@@ -25,6 +26,7 @@ public class MsgSetMeta<Pu,Pr> implements Serializable {
     public String[] tags = null;
     public Credential cred = null;
     public Map<String,Object> aux = null;
+    public MsgClientSet.MsgReactClient react;
 
     public MsgSetMeta() {}
 
@@ -100,6 +102,12 @@ public class MsgSetMeta<Pu,Pr> implements Serializable {
             if (aux == null || aux.isEmpty()) {
                 msm.nulls |= NULL_AUX;
             }
+            return this;
+        }
+
+        // Reaction.
+        public Builder<Pu,Pr> with(int seq, String val) {
+            msm.react = new MsgClientSet.MsgReactClient(seq, val);
             return this;
         }
 

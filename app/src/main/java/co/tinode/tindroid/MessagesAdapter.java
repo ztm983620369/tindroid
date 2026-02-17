@@ -93,6 +93,7 @@ import co.tinode.tinodesdk.Tinode;
 import co.tinode.tinodesdk.Topic;
 import co.tinode.tinodesdk.model.Drafty;
 import co.tinode.tinodesdk.model.MsgGetMeta;
+import co.tinode.tinodesdk.model.MsgOneReaction;
 import co.tinode.tinodesdk.model.MsgRange;
 import co.tinode.tinodesdk.model.ServerMessage;
 import co.tinode.tinodesdk.model.Subscription;
@@ -815,6 +816,14 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
             }
         }
 
+        // Bind reactions
+        if (holder.mReactions != null) {
+            MsgOneReaction[] reactions = topic.msgReactions(m.seq);
+            holder.mReactions.setMyUserId(Cache.getTinode().getMyId());
+            holder.mReactions.setOnReactionClickListener(reaction -> topic.react(m.seq, reaction));
+            holder.mReactions.setReactions(reactions);
+        }
+
         holder.itemView.setOnLongClickListener(v -> {
             int pos = holder.getBindingAdapterPosition();
 
@@ -835,11 +844,17 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
                 notifyItemChanged(pos);
                 updateSelectionMode();
             } else {
-                animateMessageBubble(holder, m.isMine(), true);
+                // Check if message has clickable content that should handle the tap
+                boolean hasClickableContent = m.content != null && m.content.hasEntities(
+                        Arrays.asList("AU", "BN", "EX", "IM", "VD"));
+
                 int replySeq = UiUtils.parseSeqReference(m.getStringHeader("reply"));
                 if (replySeq > 0) {
                     // A reply message was clicked. Scroll original into view and animate.
                     scrollToAndAnimate(replySeq);
+                } else if (!hasClickableContent) {
+                    // Show reaction picker on tap if no other action
+                    showReactionPicker(holder.itemView, topic, m.seq, topic.msgReactions(m.seq));
                 }
             }
         });
@@ -907,6 +922,24 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
                 vh.mMessageBubble.setBackgroundTintList(ColorStateList.valueOf((int) animator.getAnimatedValue()))
         );
         colorAnimation.start();
+    }
+
+    @SuppressWarnings("unchecked")
+    private void showReactionPicker(View anchor, ComTopic<VxCard> topic, int seq, MsgOneReaction[] currentReactions) {
+        String[] reactionList = topic.reactions();
+        if (reactionList == null || reactionList.length == 0) {
+            return;
+        }
+
+        co.tinode.tindroid.widgets.ReactionPickerDialog picker =
+                new co.tinode.tindroid.widgets.ReactionPickerDialog(
+                        anchor.getContext(),
+                        reactionList,
+                        currentReactions,
+                        Cache.getTinode().getMyId());
+
+        picker.setOnReactionSelectedListener(reaction -> topic.react(seq, reaction));
+        picker.show(anchor);
     }
 
     // Must match position-to-item of getItemId.
@@ -1181,6 +1214,7 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
         final AppCompatImageButton mCancelProgress;
         final View mProgress;
         final TextView mProgressResult;
+        final co.tinode.tindroid.widgets.ReactionStripView mReactions;
         final GestureDetector mGestureDetector;
         int seqId = 0;
 
@@ -1203,6 +1237,7 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
             mProgressBar = itemView.findViewById(R.id.attachmentProgressBar);
             mCancelProgress = itemView.findViewById(R.id.attachmentProgressCancel);
             mProgressResult = itemView.findViewById(R.id.progressResult);
+            mReactions = itemView.findViewById(R.id.reactions);
             mGestureDetector = new GestureDetector(itemView.getContext(),
                     new GestureDetector.SimpleOnGestureListener() {
                         @Override

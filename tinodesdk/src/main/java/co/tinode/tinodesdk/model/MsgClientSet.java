@@ -10,12 +10,18 @@ import static com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT;
 
 /**
  * Metadata update packet: description, subscription, tags, credentials.
- * <p>
- * 	topic metadata, new topic &amp; new subscriptions only
- *  Desc *MsgSetDesc `json:"desc,omitempty"`
- * <p>
- *  Subscription parameters
- *  Sub *MsgSetSub `json:"sub,omitempty"`
+ * Topic/user description, new object & new subscriptions only
+ * - Desc *MsgSetDesc `json:"desc,omitempty"`
+ * Subscription parameters
+ * - Sub *MsgSetSub `json:"sub,omitempty"`
+ * Indexable tags for user discovery
+ * - Tags []string `json:"tags,omitempty"`
+ * Update to account credentials.
+ * - Cred *MsgCredClient `json:"cred,omitempty"`
+ * Update auxiliary data
+ * - Aux map[string]any
+ * Add reaction to message
+ * - React *MsgReactClient `json:"react,omitempty"`
  */
 @JsonInclude(NON_DEFAULT)
 public class MsgClientSet<Pu,Pr> implements Serializable {
@@ -31,11 +37,12 @@ public class MsgClientSet<Pu,Pr> implements Serializable {
     public String[] tags;
     public Credential cred;
     public Map<String, Object> aux;
+    public MsgReactClient react;
 
     public MsgClientSet() {}
 
     public MsgClientSet(String id, String topic, MsgSetMeta<Pu,Pr> meta) {
-        this(id, topic, meta.desc, meta.sub, meta.tags, meta.cred, meta.aux);
+        this(id, topic, meta.desc, meta.sub, meta.tags, meta.cred, meta.aux, meta.react);
         nulls = meta.nulls;
     }
 
@@ -46,7 +53,7 @@ public class MsgClientSet<Pu,Pr> implements Serializable {
 
     protected MsgClientSet(String id, String topic, MetaSetDesc<Pu, Pr> desc,
                            MetaSetSub sub, String[] tags, Credential cred,
-                           Map<String, Object> aux) {
+                           Map<String, Object> aux, MsgReactClient react) {
         this.id = id;
         this.topic = topic;
         this.desc = desc;
@@ -54,12 +61,27 @@ public class MsgClientSet<Pu,Pr> implements Serializable {
         this.tags = tags;
         this.cred = cred;
         this.aux = aux;
+        this.react = react;
     }
 
-    public static class Builder<Pu,Pr> {
+    public static class MsgReactClient {
+        // Message ID
+        public int seq;
+        // Reaction content (emoji etc.).
+        public String val;
+
+        public MsgReactClient() {}
+
+        public MsgReactClient(int seq, String val) {
+            this.seq = seq;
+            this.val = val;
+        }
+    }
+
+    public static class Builder_remove<Pu,Pr> {
         private final MsgClientSet<Pu,Pr> msm;
 
-        public Builder(String id, String topic) {
+        public Builder_remove(String id, String topic) {
             msm = new MsgClientSet<>(id, topic);
         }
 
@@ -96,6 +118,10 @@ public class MsgClientSet<Pu,Pr> implements Serializable {
             if (aux == null || aux.isEmpty()) {
                 msm.nulls |= MsgSetMeta.NULL_AUX;
             }
+        }
+
+        public void with(int seq, String val) {
+            msm.react = new MsgReactClient(seq, val);
         }
 
         public MsgClientSet<Pu,Pr> build() {

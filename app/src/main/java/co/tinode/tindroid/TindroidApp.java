@@ -360,7 +360,6 @@ public class TindroidApp extends Application implements DefaultLifecycleObserver
                         InstallReferrerClient.newBuilder(this).build()));
             }
         }
-
         // Check if the app has an account already. If so, initialize the shared connection with the server.
         // Initialization may fail if device is not connected to the network.
         String uid = BaseDb.getInstance().getUid();
@@ -450,6 +449,7 @@ public class TindroidApp extends Application implements DefaultLifecycleObserver
 
     // Read saved account credentials and try to connect to server using them.
     private void loginInBackground(String uid) {
+        Log.i(TAG, "loginInBackground");
         final AccountManager accountManager = AccountManager.get(TindroidApp.this);
         final Account account = Utils.getSavedAccount(accountManager, uid);
         if (account != null) {
@@ -482,17 +482,24 @@ public class TindroidApp extends Application implements DefaultLifecycleObserver
             final Tinode tinode = Cache.getTinode();
             if (!TextUtils.isEmpty(token) && expires != null && expires.after(new Date())) {
                 // Connecting with synchronous calls because this is not the UI thread.
+                Log.i(TAG, "loginInBackground -- setAutoLoginToken " + token);
                 tinode.setAutoLoginToken(token);
                 // Connect and login.
                 try {
                     SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(TindroidApp.this);
                     // Sync call throws on error.
+                    Log.i(TAG, "loginInBackground -- tinode.connect");
                     tinode.connect(pref.getString(Utils.PREFS_HOST_NAME, getDefaultHostName()),
                             pref.getBoolean(Utils.PREFS_USE_TLS, getDefaultTLS()),
                             false).getResult();
+                    Log.i(TAG, "loginInBackground -- tinode.connect -- done");
                     if (!tinode.isAuthenticated()) {
+                        Log.i(TAG, "loginInBackground -- tinode.loginToken");
                         // The connection may already exist but not yet authenticated.
                         tinode.loginToken(token).getResult();
+                        Log.i(TAG, "loginInBackground -- tinode.loginToken -- done");
+                    } else {
+                        Log.i(TAG, "loginInBackground -- already authenticated");
                     }
                     Cache.attachMeTopic(null);
                     // Logged in successfully. Save refreshed token for future use.
@@ -511,11 +518,13 @@ public class TindroidApp extends Application implements DefaultLifecycleObserver
                     // 401: Token expired or invalid login.
                     // 404: 'me' topic is not found (user deleted, but token is still valid).
                     if (code == ServerMessage.STATUS_UNAUTHORIZED || code == ServerMessage.STATUS_NOT_FOUND) {
+                        Log.i(TAG, "Login failed: " + code);
                         // Another try-catch because some users revoke needed permission after granting it.
                         try {
                             // Login failed due to invalid (expired) token or missing/disabled account.
                             accountManager.invalidateAuthToken(Utils.ACCOUNT_TYPE, null);
                             accountManager.setUserData(account, Utils.TOKEN_EXPIRATION_TIME, null);
+                            Log.i(TAG, "Invalidated credentials");
                         } catch (SecurityException ex2) {
                             Log.e(TAG, "Unable to access android account", ex2);
                         }
@@ -543,6 +552,7 @@ public class TindroidApp extends Application implements DefaultLifecycleObserver
             // Force new login in case account existed before but was deleted.
             UiUtils.doLogout(TindroidApp.this);
         }
+        Log.i(TAG, "loginInBackground -- done");
     }
 
     public static void onThemeChanged(@NonNull String themeKey) {

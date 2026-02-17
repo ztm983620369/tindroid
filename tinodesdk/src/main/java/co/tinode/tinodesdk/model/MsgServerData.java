@@ -19,8 +19,14 @@ public class MsgServerData implements Serializable {
     public Date ts;
     public int seq;
     public Drafty content;
+    public MsgOneReaction[] react;
 
     public MsgServerData() {
+    }
+
+    @JsonIgnore
+    public MsgOneReaction[] getReactions() {
+        return react;
     }
 
     @JsonIgnore

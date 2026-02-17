@@ -62,6 +62,8 @@
     <string name="action_delete_group">Delete conversation…</string>
     <string name="action_leave_topic">Leave conversation…</string>
     <string name="action_video_call">Video call</string>
+    <string name="add_reaction">Add reaction</string>
+    <string name="show_more">Show more</string>
 
     <string name="avatar">Avatar picture</string>
     <string name="image_is_unavailable">Image is unavailable</string>

@@ -230,4 +230,16 @@ public class UtilsString {
         }
         return count;
     }
+
+    public static String shortenCount(int count) {
+        if (count < 1000) {
+            return String.valueOf(count);
+        } else if (count < 10000) {
+            return String.format(Locale.US, "%.1fK", count / 1000.0);
+        } else if (count < 1000000) {
+            return String.format(Locale.US, "%dK", count / 1000);
+        } else {
+            return String.format(Locale.US, "%.1fM", count / 1000000.0);
+        }
+    }
 }
