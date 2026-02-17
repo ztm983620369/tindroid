@@ -56,7 +56,6 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import androidx.annotation.NonNull;
@@ -344,24 +343,22 @@ public class TindroidApp extends Application implements DefaultLifecycleObserver
         return cache;
     }
 
+    @SuppressWarnings("resource") // Intentionally not using try-with-resources to avoid blocking main thread.
     @Override
     public void onStart(@NonNull LifecycleOwner owner) {
         // Check if the app was installed from an URL with attributed installation source.
         // If yes, get the config from hosts.tinode.co.
         if (UiUtils.isAppFirstRun(sContext)) {
-            try (ExecutorService exec = Executors.newSingleThreadExecutor()) {
-                exec.execute(() -> BrandingConfig.getInstallReferrerFromClient(sContext,
-                        InstallReferrerClient.newBuilder(this).build()));
-            }
+            Executors.newSingleThreadExecutor().execute(() ->
+                    BrandingConfig.getInstallReferrerFromClient(sContext,
+                            InstallReferrerClient.newBuilder(this).build()));
         }
 
         // Check if the app has an account already. If so, initialize the shared connection with the server.
         // Initialization may fail if device is not connected to the network.
         String uid = BaseDb.getInstance().getUid();
         if (!TextUtils.isEmpty(uid)) {
-            try (ExecutorService exec = Executors.newSingleThreadExecutor()) {
-                exec.execute(() -> loginInBackground(uid));
-            }
+            Executors.newSingleThreadExecutor().execute(() -> loginInBackground(uid));
         }
     }
 
