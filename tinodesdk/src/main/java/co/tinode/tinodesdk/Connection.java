@@ -173,14 +173,20 @@ public class Connection extends WebSocketClient {
      * to send a frame to the server.
      * <p>
      * The call is idempotent: if connection is already closed it does nothing.
+     * This method is non-blocking.
      */
     @SuppressWarnings("WeakerAccess")
-    synchronized public void disconnect() {
-        boolean wakeUp = mAutoreconnect;
-        mAutoreconnect = false;
+    public void disconnect() {
+        boolean wakeUp;
+        synchronized (this) {
+            wakeUp = mAutoreconnect;
+            mAutoreconnect = false;
+        }
 
-        // Actually close the socket (non-blocking).
-        close();
+        // Close the socket on a background thread to avoid blocking the main thread.
+        // WebSocketClient.close() may block waiting to acquire a lock
+        // (even though it's intended to be non-blocking).
+        new Thread(this::close).start();
 
         if (wakeUp) {
             // Make sure we are not waiting to reconnect
