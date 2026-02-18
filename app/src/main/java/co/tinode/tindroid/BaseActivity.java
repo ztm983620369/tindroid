@@ -1,5 +1,6 @@
 package co.tinode.tindroid;
 
+import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 
@@ -13,7 +14,12 @@ import androidx.core.view.WindowInsetsCompat;
 public class BaseActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        EdgeToEdge.enable(this);
+        // On SDK 35+, edge-to-edge is enforced by default and EdgeToEdge.enable()
+        // uses deprecated setStatusBarColor/setNavigationBarColor APIs.
+        // Only call it on older versions for backward compatibility.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            EdgeToEdge.enable(this);
+        }
         super.onCreate(savedInstanceState);
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
     }

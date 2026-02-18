@@ -1,8 +1,10 @@
 package co.tinode.tindroid;
 
 import android.content.Intent;
+import android.os.Build;
 import android.os.Bundle;
 
+import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
 import co.tinode.tindroid.db.BaseDb;
 
@@ -12,6 +14,11 @@ import co.tinode.tindroid.db.BaseDb;
 public class InitRouterActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // On SDK 35+, edge-to-edge is enforced by default.
+        // Only call EdgeToEdge.enable() on older versions to avoid deprecated API warnings.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            EdgeToEdge.enable(this);
+        }
         super.onCreate(savedInstanceState);
 
         // No need to check for live connection here.

@@ -63,7 +63,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import androidx.appcompat.app.AlertDialog;
@@ -412,19 +411,17 @@ public class UiUtils {
     }
 
     static void onContactsPermissionsGranted(Activity activity) {
-        try (ExecutorService exec = Executors.newSingleThreadExecutor()) {
-            // Run in background.
-            exec.execute(() -> {
-                Account acc = Utils.getSavedAccount(AccountManager.get(activity), Cache.getTinode().getMyId());
-                if (acc == null) {
-                    return;
-                }
-                Tinode tinode = Cache.getTinode();
-                Collection<ComTopic<VxCard>> topics = tinode.getFilteredTopics(Topic::isP2PType);
-                ContactsManager.updateContacts(activity, acc, topics);
-                TindroidApp.startWatchingContacts(activity, acc);
-            });
-        }
+        // Run in background without blocking the main thread.
+        Executors.newSingleThreadExecutor().execute(() -> {
+            Account acc = Utils.getSavedAccount(AccountManager.get(activity), Cache.getTinode().getMyId());
+            if (acc == null) {
+                return;
+            }
+            Tinode tinode = Cache.getTinode();
+            Collection<ComTopic<VxCard>> topics = tinode.getFilteredTopics(Topic::isP2PType);
+            ContactsManager.updateContacts(activity, acc, topics);
+            TindroidApp.startWatchingContacts(activity, acc);
+        });
     }
 
     // Creates or updates the Android account associated with the given UID.

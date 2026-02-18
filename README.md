@@ -58,11 +58,11 @@ static def gitVersionName() {
 * Editing sent messages, replying and forwarding messages.
 * Trusted account badges: verified account, staff, etc.
 * Form messages suitable for chatbots.
-* File attachments, inline images and videos, voice messages.
-* Muting/un-muting conversations and other granular permission management.
+* Muting/unmuting conversations and other granular permission management.
 * Integration with Android's stock Contacts.
 * Invite contacts to the app by SMS or email.
 * Transport Level Security - https/wss.
+* Pinning conversations to the top of the list.
 * Pinning important messages to the top of a conversation.
 * Offline mode.
 
