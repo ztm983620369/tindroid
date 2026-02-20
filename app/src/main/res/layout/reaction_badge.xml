@@ -19,6 +19,7 @@
         android:id="@+id/reactionEmoji"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:textColor="#FF000000"
         android:textSize="14sp"
         tools:text="👍" />
 

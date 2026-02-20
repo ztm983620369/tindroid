@@ -10,6 +10,18 @@
     <color name="colorReplyBubble">#10CCCCCC</color>
     <color name="colorReplyText">#CCCCCC</color>
 
+    <!-- Reaction picker and badge colors -->
+    <color name="colorReactionBadge">#424242</color>
+    <color name="colorReactionBadgeActive">#1A237E</color>
+    <color name="colorReactionBadgeActiveBorder">#5C6BC0</color>
+    <color name="colorReactionPickerBackground">#303030</color>
+    <color name="colorReactionPickerBorder">#505050</color>
+    <color name="colorReactionPressed">#505050</color>
+    <color name="colorReactionSelected">#1A237E</color>
+    <color name="colorReactionSelectedBorder">#5C6BC0</color>
+    <color name="colorReactionActivated">#283593</color>
+    <color name="colorReactionCountBadge">#9E9E9E</color>
+
     <color name="colorNegativeAction">#983220</color>
     <color name="colorPositiveAction">#326F3E</color>
     <color name="colorNeutralAction">#555555</color>

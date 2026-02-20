@@ -58,6 +58,18 @@
     <color name="colorReplyBubble">#10333333</color>
     <color name="colorReplyText">#666666</color>
 
+    <!-- Reaction picker and badge colors -->
+    <color name="colorReactionBadge">#E0E0E0</color>
+    <color name="colorReactionBadgeActive">#BBDEFB</color>
+    <color name="colorReactionBadgeActiveBorder">#2196F3</color>
+    <color name="colorReactionPickerBackground">@android:color/white</color>
+    <color name="colorReactionPickerBorder">#E0E0E0</color>
+    <color name="colorReactionPressed">#E0E0E0</color>
+    <color name="colorReactionSelected">#BBDEFB</color>
+    <color name="colorReactionSelectedBorder">#2196F3</color>
+    <color name="colorReactionActivated">#E3F2FD</color>
+    <color name="colorReactionCountBadge">#757575</color>
+
     <color name="colorImageMetaPanel">#80FFFFFF</color>
 
     <!-- Audio waveform color -->

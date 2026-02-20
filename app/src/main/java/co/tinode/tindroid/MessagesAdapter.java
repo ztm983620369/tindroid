@@ -27,6 +27,7 @@ import android.text.Spanned;
 import android.text.TextUtils;
 import android.text.format.DateUtils;
 import android.text.style.CharacterStyle;
+import android.text.style.ClickableSpan;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.IconMarginSpan;
 import android.text.style.RelativeSizeSpan;
@@ -82,6 +83,7 @@ import co.tinode.tindroid.db.StoredMessage;
 import co.tinode.tindroid.format.CopyFormatter;
 import co.tinode.tindroid.format.FullFormatter;
 import co.tinode.tindroid.format.QuoteFormatter;
+import co.tinode.tindroid.format.QuotedSpan;
 import co.tinode.tindroid.format.StableLinkMovementMethod;
 import co.tinode.tindroid.format.ThumbnailTransformer;
 import co.tinode.tindroid.media.VxCard;
@@ -837,6 +839,31 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
 
             return true;
         });
+
+        // Check if message has clickable content that should handle taps
+        // (images, audio, buttons, attachments, video).
+        boolean hasClickableContent = m.content != null && m.content.hasEntities(
+                Arrays.asList("AU", "BN", "EX", "IM", "VD"));
+
+        if (hasClickableContent && holder.mMessageBubble != null) {
+            // For messages with clickable content, long-press on the bubble shows the reaction picker
+            // without interfering with existing click targets (images, audio, buttons, etc.).
+            holder.mMessageBubble.setOnLongClickListener(v -> {
+                if (mSelectedItems == null) {
+                    showReactionPicker(holder.itemView, topic, m.seq, topic.msgReactions(m.seq));
+                    return true;
+                }
+                // In selection mode, let the event propagate to itemView.
+                return false;
+            });
+        } else if (holder.mMessageBubble != null) {
+            // Must explicitly clear longClickable: setOnLongClickListener(null) does NOT reset it,
+            // and a recycled ViewHolder from a clickable message would still have longClickable=true,
+            // causing the bubble to consume touches and prevent them from reaching itemView.
+            holder.mMessageBubble.setOnLongClickListener(null);
+            holder.mMessageBubble.setLongClickable(false);
+        }
+
         holder.itemView.setOnClickListener(v -> {
             if (mSelectedItems != null) {
                 int pos = holder.getBindingAdapterPosition();
@@ -844,16 +871,13 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
                 notifyItemChanged(pos);
                 updateSelectionMode();
             } else {
-                // Check if message has clickable content that should handle the tap
-                boolean hasClickableContent = m.content != null && m.content.hasEntities(
-                        Arrays.asList("AU", "BN", "EX", "IM", "VD"));
-
                 int replySeq = UiUtils.parseSeqReference(m.getStringHeader("reply"));
-                if (replySeq > 0) {
-                    // A reply message was clicked. Scroll original into view and animate.
+                // Only scroll to the quoted message if the user tapped the quote area itself.
+                Boolean quoteTapped = (Boolean) v.getTag(R.id.quote_tapped);
+                v.setTag(R.id.quote_tapped, null);
+                if (replySeq > 0 && Boolean.TRUE.equals(quoteTapped)) {
                     scrollToAndAnimate(replySeq);
-                } else if (!hasClickableContent) {
-                    // Show reaction picker on tap if no other action
+                } else {
                     showReactionPicker(holder.itemView, topic, m.seq, topic.msgReactions(m.seq));
                 }
             }
@@ -1247,6 +1271,36 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
 
                         @Override
                         public boolean onSingleTapConfirmed(@NonNull MotionEvent ev) {
+                            // Check if the tap landed on a ClickableSpan or QuotedSpan.
+                            boolean hitQuote = false;
+                            if (mText != null && mText.getLayout() != null) {
+                                int[] textLoc = new int[2];
+                                mText.getLocationOnScreen(textLoc);
+                                int x = (int) ev.getRawX() - textLoc[0] - mText.getTotalPaddingLeft();
+                                int y = (int) ev.getRawY() - textLoc[1] - mText.getTotalPaddingTop();
+                                x += mText.getScrollX();
+                                y += mText.getScrollY();
+                                if (x >= 0 && y >= 0) {
+                                    int line = mText.getLayout().getLineForVertical(y);
+                                    int off = mText.getLayout().getOffsetForHorizontal(line, x);
+                                    CharSequence spanText = mText.getText();
+                                    if (spanText instanceof android.text.Spanned) {
+                                        android.text.Spanned spanned = (android.text.Spanned) spanText;
+                                        ClickableSpan[] clicks = spanned
+                                                .getSpans(off, off, ClickableSpan.class);
+                                        if (clicks.length > 0) {
+                                            // A clickable span handled this tap; don't show reaction picker.
+                                            return true;
+                                        }
+                                        QuotedSpan[] quotes = spanned
+                                                .getSpans(off, off, QuotedSpan.class);
+                                        hitQuote = quotes.length > 0;
+                                    }
+                                }
+                            }
+                            // Store whether the tap hit the quoted area so the click listener
+                            // can decide between scroll-to-reply and reaction picker.
+                            itemView.setTag(R.id.quote_tapped, hitQuote);
                             itemView.performClick();
                             return super.onSingleTapConfirmed(ev);
                         }
