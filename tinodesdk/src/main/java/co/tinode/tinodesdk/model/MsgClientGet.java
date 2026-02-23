@@ -14,6 +14,7 @@ import static com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT;
  *  Desc *MsgGetOpts `json:"desc,omitempty"`
  *  Sub *MsgGetOpts `json:"sub,omitempty"`
  *  Data *MsgBrowseOpts `json:"data,omitempty"`
+ *  React *MsgBrowseOpts `json:"react,omitempty"`
  */
 @JsonInclude(NON_DEFAULT)
 public class MsgClientGet implements Serializable {
@@ -24,6 +25,7 @@ public class MsgClientGet implements Serializable {
     public MetaGetDesc desc;
     public MetaGetSub sub;
     public MetaGetData data;
+    public MetaGetData react;
 
     public MsgClientGet() {}
 
@@ -34,25 +36,6 @@ public class MsgClientGet implements Serializable {
         this.desc = query.desc;
         this.sub = query.sub;
         this.data = query.data;
-    }
-
-    public MsgClientGet(String id, String topic, MetaGetDesc desc,
-                        MetaGetSub sub, MetaGetData data) {
-        this.id = id;
-        this.topic = topic;
-        this.what = "";
-        if (desc != null) {
-            this.what = "desc";
-            this.desc = desc;
-        }
-        if (sub != null) {
-            this.what += " sub";
-            this.sub = sub;
-        }
-        if (data != null) {
-            this.what += " data";
-            this.data = data;
-        }
-        this.what = this.what.trim();
+        this.react = query.react;
     }
 }

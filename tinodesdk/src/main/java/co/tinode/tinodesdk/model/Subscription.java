@@ -27,6 +27,7 @@ public class Subscription<SP,SR> implements LocalData, Serializable {
     public String topic;
     public int seq;
     public int clear;
+    public int mrrid;
     public int subcnt;
 
     @JsonProperty("public")

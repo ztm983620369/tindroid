@@ -283,6 +283,8 @@ public interface Storage {
 
         /** Get message reactions */
         MsgOneReaction[] getReactions();
+        /** Set message reactions */
+        void setReactions(MsgOneReaction[] reactions);
 
         /** Get current message unique ID (database ID) */
         long getDbId();

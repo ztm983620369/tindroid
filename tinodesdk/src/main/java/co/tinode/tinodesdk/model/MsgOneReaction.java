@@ -10,4 +10,20 @@ public class MsgOneReaction {
     public Integer count;
     // User IDs of users who reacted with this value (count be nil for channels).
     public  String[] users;
+
+    public MsgOneReaction() {
+    }
+
+    public MsgOneReaction(int mrrid, String val, Integer count, String[] users) {
+        this.mrrid = mrrid;
+        this.val = val;
+        this.count = count;
+        this.users = users;
+    }
+
+    public MsgOneReaction(int mrrid, MsgReactClient r) {
+        this.mrrid = mrrid;
+        this.val = r.val;
+        this.count = 1;
+    }
 }

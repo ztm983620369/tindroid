@@ -1,6 +1,7 @@
 package co.tinode.tindroid.db;
 
 import android.database.Cursor;
+import android.util.Log;
 
 import java.util.Date;
 import java.util.Map;
@@ -37,6 +38,7 @@ public class StoredMessage extends MsgServerData implements Storage.Message {
 
     public static StoredMessage readMessage(Cursor c, int previewLength) {
         StoredMessage msg = new StoredMessage();
+        Log.i("StoredMessage", "readMessage from cursor at " + c.getPosition());
 
         msg.id = c.getLong(MessageDb.COLUMN_IDX_ID);
         msg.topicId = c.getLong(MessageDb.COLUMN_IDX_TOPIC_ID);
@@ -57,12 +59,21 @@ public class StoredMessage extends MsgServerData implements Storage.Message {
         }
         // Read reactions if column exists
         if (c.getColumnCount() > MessageDb.COLUMN_IDX_REACTIONS) {
-            msg.react = BaseDb.deserializeArray(c.getString(MessageDb.COLUMN_IDX_REACTIONS)
-            );
+            String reactStr = c.getString(MessageDb.COLUMN_IDX_REACTIONS);
+            msg.react = BaseDb.deserializeArray(reactStr);
+            if (reactStr != null) {
+                Log.i("StoredMessage", "Deserialized " + reactStr +
+                        " into " + (msg.react != null ?  msg.react.length : "NULL") + " reactions");
+            }
+        } else {
+            Log.i("StoredMessage", "Not enough columns to read reactions");
         }
+
         if (c.getColumnCount() > MessageDb.COLUMN_IDX_TOPIC_NAME) {
             msg.topic = c.getString(MessageDb.COLUMN_IDX_TOPIC_NAME);
         }
+
+        Log.i("StoredMessage", "DONE readMessage from cursor at " + c.getPosition());
 
         return msg;
     }
@@ -148,6 +159,11 @@ public class StoredMessage extends MsgServerData implements Storage.Message {
     @Override
     public MsgOneReaction[] getReactions() {
         return react;
+    }
+
+    @Override
+    public void setReactions(MsgOneReaction[] react) {
+        this.react = react;
     }
 
     public boolean isReplacement() {

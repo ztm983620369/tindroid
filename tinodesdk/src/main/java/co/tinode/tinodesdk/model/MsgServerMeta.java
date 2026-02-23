@@ -17,6 +17,7 @@ public class MsgServerMeta<DP, DR, SP, SR> implements Serializable {
     public String[] tags;
     public Credential[] cred;
     public Map<String, Object> aux;
+    public MsgReactions react;
 
     public MsgServerMeta() {
     }

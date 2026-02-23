@@ -24,6 +24,8 @@ public class Description<DP, DR> implements Serializable {
     public int read;
     public int recv;
     public int clear;
+    // Most recent reaction ID.
+    public int mrrid;
     // Merged from Subscription.
     public int subcnt;
 
@@ -131,6 +133,10 @@ public class Description<DP, DR> implements Serializable {
             clear = desc.clear;
             changed = true;
         }
+        if (desc.mrrid > mrrid) {
+            mrrid = desc.mrrid;
+            changed = true;
+        }
         if (desc.subcnt > 0) {
             changed = subcnt != desc.subcnt || changed;
             subcnt = desc.subcnt;
@@ -210,6 +216,11 @@ public class Description<DP, DR> implements Serializable {
 
         if (sub.clear > clear) {
             clear = sub.clear;
+            changed = true;
+        }
+
+        if (sub.mrrid > mrrid) {
+            mrrid = sub.mrrid;
             changed = true;
         }
 

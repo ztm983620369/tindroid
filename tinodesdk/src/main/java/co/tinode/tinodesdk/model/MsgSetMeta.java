@@ -26,7 +26,7 @@ public class MsgSetMeta<Pu,Pr> implements Serializable {
     public String[] tags = null;
     public Credential cred = null;
     public Map<String,Object> aux = null;
-    public MsgClientSet.MsgReactClient react;
+    public MsgReactClient react;
 
     public MsgSetMeta() {}
 
@@ -51,10 +51,11 @@ public class MsgSetMeta<Pu,Pr> implements Serializable {
 
     public boolean isEmpty() {
         return desc == null &&
-            sub == null &&
-            tags == null &&
-            cred == null &&
-            aux == null &&
+                sub == null &&
+                tags == null &&
+                cred == null &&
+                aux == null &&
+                react == null &&
             (nulls & (NULL_DESC | NULL_SUB | NULL_TAGS | NULL_CRED | NULL_AUX)) == 0;
     }
 
@@ -107,7 +108,7 @@ public class MsgSetMeta<Pu,Pr> implements Serializable {
 
         // Reaction.
         public Builder<Pu,Pr> with(int seq, String val) {
-            msm.react = new MsgClientSet.MsgReactClient(seq, val);
+            msm.react = new MsgReactClient(seq, val);
             return this;
         }
 

@@ -37,20 +37,20 @@ public class ReactionStripView extends LinearLayout {
 
     public ReactionStripView(@NonNull Context context) {
         super(context);
-        init(context);
+        init();
     }
 
     public ReactionStripView(@NonNull Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
-        init(context);
+        init();
     }
 
     public ReactionStripView(@NonNull Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
-        init(context);
+        init();
     }
 
-    private void init(Context context) {
+    private void init() {
         setOrientation(HORIZONTAL);
         setLayoutParams(new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
     }

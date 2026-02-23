@@ -57,6 +57,11 @@ public class MsgClientSetSerializer extends StdSerializer<MsgClientSet<?,?>> {
         } else if ((value.nulls & MsgSetMeta.NULL_AUX) != 0) {
             gen.writeStringField("aux", Tinode.NULL_VALUE);
         }
+
+        if (value.react != null) {
+            gen.writeObjectField("react", value.react);
+        }
+
         gen.writeEndObject();
     }
 }

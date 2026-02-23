@@ -87,6 +87,7 @@ import co.tinode.tindroid.format.QuotedSpan;
 import co.tinode.tindroid.format.StableLinkMovementMethod;
 import co.tinode.tindroid.format.ThumbnailTransformer;
 import co.tinode.tindroid.media.VxCard;
+import co.tinode.tindroid.widgets.ReactionStripView;
 import co.tinode.tinodesdk.ComTopic;
 import co.tinode.tinodesdk.MeTopic;
 import co.tinode.tinodesdk.PromisedReply;
@@ -824,6 +825,11 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
             holder.mReactions.setMyUserId(Cache.getTinode().getMyId());
             holder.mReactions.setOnReactionClickListener(reaction -> topic.react(m.seq, reaction));
             holder.mReactions.setReactions(reactions);
+            if (reactions != null) {
+                Log.i(TAG, "Seq=" + m.seq + "; react=" + Arrays.toString(reactions));
+            }
+        } else {
+            Log.i(TAG, "mReactions is NULL");
         }
 
         holder.itemView.setOnLongClickListener(v -> {
@@ -973,6 +979,7 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
 
     private static StoredMessage getMessage(@Nullable Cursor cur, int position, int previewLength) {
         if (cur != null && !cur.isClosed() && cur.moveToPosition(position)) {
+            Log.i(TAG, "getMessage " + position);
             return StoredMessage.readMessage(cur, previewLength);
         }
         return null;
@@ -1238,7 +1245,7 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
         final AppCompatImageButton mCancelProgress;
         final View mProgress;
         final TextView mProgressResult;
-        final co.tinode.tindroid.widgets.ReactionStripView mReactions;
+        final ReactionStripView mReactions;
         final GestureDetector mGestureDetector;
         int seqId = 0;
 

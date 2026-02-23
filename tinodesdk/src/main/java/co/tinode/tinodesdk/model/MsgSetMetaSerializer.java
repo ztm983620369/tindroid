@@ -51,6 +51,10 @@ public class MsgSetMetaSerializer extends StdSerializer<MsgSetMeta<?,?>> {
             gen.writeStringField("aux", Tinode.NULL_VALUE);
         }
 
+        if (value.react != null) {
+            gen.writeObjectField("react", value.react);
+        }
+
         gen.writeEndObject();
     }
 }

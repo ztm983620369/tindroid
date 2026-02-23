@@ -24,6 +24,8 @@ public class MsgGetMeta implements Serializable {
     private static final int TAGS_SET = 0x10;
     private static final int CRED_SET = 0x20;
     private static final int AUX_SET = 0x40;
+    private static final int REACT_SET = 0x80;
+
     private static final String DESC = "desc";
     private static final String SUB = "sub";
     private static final String DATA = "data";
@@ -31,6 +33,8 @@ public class MsgGetMeta implements Serializable {
     private static final String TAGS = "tags";
     private static final String CRED = "cred";
     private static final String AUX = "aux";
+    private static final String REACT = "react";
+
     @JsonIgnore
     private int mSet = 0;
 
@@ -39,6 +43,7 @@ public class MsgGetMeta implements Serializable {
     public MetaGetSub sub;
     public MetaGetData data;
     public MetaGetData del;
+    public MetaGetData react;
 
     /**
      * Empty query.
@@ -53,7 +58,7 @@ public class MsgGetMeta implements Serializable {
      * @param data request data messages
      */
     public MsgGetMeta(MetaGetDesc desc, MetaGetSub sub, MetaGetData data, MetaGetData del,
-                      Boolean tags, Boolean cred, Boolean aux) {
+                      Boolean tags, Boolean cred, Boolean aux, MetaGetData react) {
         this.desc = desc;
         this.sub = sub;
         this.data = data;
@@ -67,6 +72,7 @@ public class MsgGetMeta implements Serializable {
         if (aux != null && aux) {
             this.mSet |= AUX_SET;
         }
+        this.react = react;
         buildWhat();
     }
 
@@ -94,7 +100,8 @@ public class MsgGetMeta implements Serializable {
                 " del=[" + (del != null ? del.toString() : "null") + "]" +
                 " tags=[" + ((mSet & TAGS_SET) != 0 ? "set" : "null") + "]" +
                 " cred=[" + ((mSet & CRED_SET) != 0 ? "set" : "null") + "]" +
-                " aux=[" + ((mSet & AUX_SET) != 0 ? "set" : "null") + "]";
+                " aux=[" + ((mSet & AUX_SET) != 0 ? "set" : "null") + "]" +
+                " react=[" + (react != null ? react.toString() : "null") + "]";
     }
 
 
@@ -186,6 +193,14 @@ public class MsgGetMeta implements Serializable {
         buildWhat();
     }
 
+    public void setReact(Integer since, Integer before, Integer limit) {
+        if (since != null || before != null || limit != null) {
+            react = new MetaGetData(since, before, limit);
+        }
+        mSet |= REACT_SET;
+        buildWhat();
+    }
+
     @JsonIgnore
     private void buildWhat() {
         List<String> parts = new LinkedList<>();
@@ -211,6 +226,9 @@ public class MsgGetMeta implements Serializable {
         }
         if ((mSet & AUX_SET) != 0) {
             parts.add(AUX);
+        }
+        if (react != null || (mSet & REACT_SET) != 0) {
+            parts.add(REACT);
         }
 
         if (!parts.isEmpty()) {

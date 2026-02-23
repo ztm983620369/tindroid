@@ -34,6 +34,8 @@ import co.tinode.tinodesdk.model.MetaSetSub;
 import co.tinode.tinodesdk.model.MsgGetMeta;
 import co.tinode.tinodesdk.model.MsgOneReaction;
 import co.tinode.tinodesdk.model.MsgRange;
+import co.tinode.tinodesdk.model.MsgReactClient;
+import co.tinode.tinodesdk.model.MsgReactions;
 import co.tinode.tinodesdk.model.MsgServerCtrl;
 import co.tinode.tinodesdk.model.MsgServerData;
 import co.tinode.tinodesdk.model.MsgServerInfo;
@@ -135,7 +137,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     /**
      * Start a new topic.
      * <p>
-     * Construct {@code }typeOfT} with one of {@code
+     * Construct {@code typeOfT} with one of {@code
      * com.fasterxml.jackson.databind.type.TypeFactory.constructXYZ()} methods such as
      * {@code mMyConnectionInstance.getTypeFactory().constructType(MyPayloadClass.class)}.
      * <p>
@@ -433,9 +435,21 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
             mNotifier.notifyMetaTags(mTags);
         }
 
+        if (meta.isCredSet()) {
+            // TODO: handle credentials update.
+        }
+
         if (meta.isAuxSet()) {
             update(meta.aux);
             mNotifier.notifyMetaAux(mAux);
+        }
+
+        if (meta.react != null) {
+            final String myId = mTinode.getMyId();
+            final int mrrid = ctrl.getIntParam("mrrid", 0);
+            update(meta.react, mrrid, myId);
+            MsgReactions mr = new MsgReactions(mrrid, meta.react);
+            mNotifier.notifyMetaReact(mr);
         }
     }
 
@@ -503,6 +517,136 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
         }
         if (mStore != null) {
             mStore.topicUpdate(this);
+        }
+    }
+
+    // Handle an incremental reaction update for a message.
+    // delta: {val, users: [user]}
+    // The users could be empty or contain exactly one user.
+    // 1. If user has already reacted with the same emoji, remove the reaction.
+    // 2. If user has already reacted with a different emoji, change the reaction.
+    // 3. If user has not reacted yet, add the reaction to the same emoji, if present.
+    // 4. If user has not reacted yet, and no one reacted that way, create a new reaction.
+    @Nullable
+    private static MsgOneReaction[] handleReactionDiff(@NotNull Storage.Message msg,
+                                                       @NotNull MsgOneReaction delta) {
+        MsgOneReaction[] orig = msg.getReactions();
+        if (orig == null) {
+            if (Tinode.NULL_VALUE.equals(delta.val)) {
+                return null;
+            }
+            return new MsgOneReaction[]{delta};
+        }
+        ArrayList<MsgOneReaction> reacts = new ArrayList<>(Arrays.asList(orig));
+        // Find if the given user has already reacted.
+        String user = (delta.users != null && delta.users.length > 0) ? delta.users[0] : null;
+        int found = -1;
+        if (user != null) {
+            for (int i = 0; i < reacts.size(); i++) {
+                MsgOneReaction r = reacts.get(i);
+                if (r.users != null && Arrays.asList(r.users).contains(user)) {
+                    found = i;
+                    break;
+                }
+            }
+        }
+        if (found >= 0) {
+            MsgOneReaction existing = reacts.get(found);
+            if (Tinode.NULL_VALUE.equals(delta.val) || existing.val.equals(delta.val)) {
+                // Remove existing reaction.
+                existing.count--;
+                existing.mrrid = Math.max(existing.mrrid, delta.mrrid);
+                if (existing.count <= 0) {
+                    reacts.remove(found);
+                } else {
+                    List<String> userList = new ArrayList<>(Arrays.asList(existing.users));
+                    userList.remove(user);
+                    existing.users = userList.toArray(new String[0]);
+                }
+            } else {
+                // User changed reaction.
+                List<String> userList = new ArrayList<>(Arrays.asList(existing.users));
+                userList.remove(user);
+                existing.users = userList.toArray(new String[0]);
+                existing.count--;
+                if (existing.count <= 0) {
+                    reacts.remove(found);
+                }
+                // Add user reaction as a different emoji.
+                int emoIndex = -1;
+                for (int i = 0; i < reacts.size(); i++) {
+                    if (delta.val.equals(reacts.get(i).val)) {
+                        emoIndex = i;
+                        break;
+                    }
+                }
+                if (emoIndex >= 0) {
+                    // Add to existing reaction.
+                    MsgOneReaction target = reacts.get(emoIndex);
+                    List<String> users = new ArrayList<>(Arrays.asList(target.users));
+                    users.add(user);
+                    target.users = users.toArray(new String[0]);
+                    target.count++;
+                    target.mrrid = Math.max(target.mrrid, delta.mrrid);
+                } else {
+                    // Create new reaction.
+                    reacts.add(new MsgOneReaction(delta.mrrid, delta.val, 1, new String[]{user}));
+                }
+            }
+        } else if (!Tinode.NULL_VALUE.equals(delta.val)) {
+            // Existing user has not reacted yet.
+            // Find reaction of the same type.
+            int emoIndex = -1;
+            for (int i = 0; i < reacts.size(); i++) {
+                if (delta.val.equals(reacts.get(i).val)) {
+                    emoIndex = i;
+                    break;
+                }
+            }
+            if (emoIndex >= 0) {
+                // Add to existing reaction.
+                MsgOneReaction target = reacts.get(emoIndex);
+                if (user != null) {
+                    List<String> users = new ArrayList<>(Arrays.asList(target.users));
+                    users.add(user);
+                    target.users = users.toArray(new String[0]);
+                }
+                target.count++;
+                target.mrrid = Math.max(target.mrrid, delta.mrrid);
+            } else {
+                // Create new reaction.
+                reacts.add(new MsgOneReaction(delta.mrrid, delta.val, 1,
+                        user != null ? new String[]{user} : new String[0]));
+            }
+        }
+        return reacts.toArray(new MsgOneReaction[0]);
+    }
+
+    protected void update(@NotNull MsgReactClient react, int mrrid, String user) {
+        if (react.seq <= 0 || react.val == null || react.val.isEmpty()) {
+            Log.w(TAG, "invalid reaction update");
+            return;
+        }
+        Storage.Message msg = getMessage(react.seq);
+        if (msg != null) {
+            MsgOneReaction[] upd = handleReactionDiff(msg,
+                    new MsgOneReaction(mrrid, react.val, 1, new String[]{user}));
+            msg.setReactions(upd);
+            int maxReact = 0;
+            if (upd != null) {
+                for (MsgOneReaction mr : upd) {
+                    maxReact = Math.max(maxReact, mr.mrrid);
+                }
+            }
+            if (mDesc.mrrid < maxReact) {
+                mDesc.mrrid = maxReact;
+                if (mStore != null) {
+                    mStore.topicUpdate(this);
+                }
+            }
+            if (mStore != null) {
+                mStore.msgUpdateReactions(this, react.seq, upd);
+            }
         }
     }
 
@@ -599,7 +743,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     }
 
     /**
-     * Get greatest known seq ID as reported by the server.
+     * Get the greatest known seq ID as reported by the server.
      * @return greatest known seq ID.
      */
     public int getSeq() {
@@ -607,7 +751,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     }
 
     /**
-     * Update greatest known seq ID.
+     * Update the greatest known seq ID.
      * @param seq new seq ID.
      */
     public void setSeq(int seq) {
@@ -855,7 +999,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     }
 
     /**
-     * Check if user has Write (W) permission.
+     * Check if user has 'Write' (W) permission.
      */
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public boolean isWriter() {
@@ -1682,11 +1826,14 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
      * @return Array of allowed reaction strings.
      */
     public String[] reactions() {
-        Object vals;
+        Object vals = mTinode.getServerParam(Tinode.REACTION_LIST);
+        if (vals == null) {
+            // Reactions are disabled on the server, so ignore topic settings.
+            return null;
+        }
+
         if (getAux("react") instanceof Map map) {
             vals = map.get("vals");
-        } else {
-            vals = mTinode.getServerParam(Tinode.REACTION_LIST);
         }
 
         if (vals instanceof List list) {
@@ -1926,7 +2073,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     }
 
     /**
-     * Send a recording notification to server. Ensure we do not sent too many.
+     * Send a recording notification to server. Ensure we do not send too many.
      */
     public void noteRecording(boolean audioOnly) {
         long now = System.currentTimeMillis();
@@ -1940,7 +2087,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     }
 
     /**
-     * Send a key press notification to server. Ensure we do not sent too many.
+     * Send a key press notification to server. Ensure we do not send too many.
      */
     public void noteKeyPress() {
         long now = System.currentTimeMillis();
@@ -2037,7 +2184,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     }
 
     /**
-     * Add subscription to cache. Needs to be overriden in MeTopic because it keeps subs indexed by topic.
+     * Add subscription to cache. Needs to be overridden in MeTopic because it keeps subs indexed by topic.
      *
      * @param sub subscription to add to cache
      */
@@ -2050,7 +2197,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     }
 
     /**
-     * Remove subscription to cache. Needs to be overriden in MeTopic because it keeps subs indexed by topic.
+     * Remove subscription to cache. Needs to be overridden in MeTopic because it keeps subs indexed by topic.
      *
      * @param sub subscription to remove from cache
      */
@@ -2088,7 +2235,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
      * Tells how many topic subscribers have reported the message as received.
      *
      * @param seq sequence id of the message to test
-     * @return count of recepients who claim to have received the message
+     * @return count of recipients who claim to have received the message
      */
     public int msgRecvCount(int seq) {
         int count = 0;
@@ -2229,7 +2376,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     }
 
     /**
-     * Called when the topic receives leave() confirmation. Overriden in 'me'.
+     * Called when the topic receives leave() confirmation. Overridden in 'me'.
      *
      * @param unsub  - not just detached but also unsubscribed
      * @param code   result code, always 200
@@ -2264,6 +2411,10 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
         if (meta.aux != null) {
             routeMetaAux(meta.aux);
         }
+        if (meta.react != null) {
+            routeMetaReact(meta.react);
+        }
+
         mNotifier.notifyMeta(meta);
     }
 
@@ -2348,6 +2499,20 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
         mNotifier.notifyMetaAux(aux);
     }
 
+    protected void routeMetaReact(MsgReactions react) {
+        if (react == null || react.seq <= 0) {
+            return;
+        }
+        Storage.Message msg = getMessage(react.seq);
+        if (msg != null) {
+            msg.setReactions(react.reacts);
+            if (mStore != null) {
+                mStore.msgUpdateReactions(this, react.seq, react.reacts);
+            }
+        }
+        mNotifier.notifyMetaReact(react);
+    }
+
     protected void routeData(MsgServerData data) {
         if (mStore != null) {
             Storage.Message msg = mStore.msgReceived(this, getSubscription(data.from), data);
@@ -2411,7 +2576,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
                 // A topic subscriber has updated his description.
                 if (pres.src != null && mTinode.getTopic(pres.src) == null) {
                     // Issue {get sub} only if the current user has no relationship with the updated user.
-                    // Otherwise 'me' will issue a {get desc} request.
+                    // Otherwise, the 'me' will issue a {get desc} request.
                     getMeta(getMetaGetBuilder().withSub(pres.src).build());
                 }
                 break;
@@ -2621,6 +2786,12 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
         }
 
         /**
+         * {meta what="react"} message received
+         */
+        default void onMetaReact(MsgReactions react) {
+        }
+
+        /**
          * {meta what="sub"} message received and all subs were processed
          */
         default void onSubsUpdated() {
@@ -2732,6 +2903,12 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
         void notifyMetaAux(Map<String,Object> aux) {
             for (L l : snapshot()) {
                 l.onMetaAux(aux);
+            }
+        }
+
+        void notifyMetaReact(MsgReactions react) {
+            for (L l : snapshot()) {
+                l.onMetaReact(react);
             }
         }
 
