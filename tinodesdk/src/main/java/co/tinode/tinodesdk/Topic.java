@@ -134,7 +134,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     /**
      * Start a new topic.
      * <p>
-     * Construct {@code }typeOfT} with one of {@code
+     * Construct {@code typeOf T} with one of {@code
      * com.fasterxml.jackson.databind.type.TypeFactory.constructXYZ()} methods such as
      * {@code mMyConnectionInstance.getTypeFactory().constructType(MyPayloadClass.class)}.
      * <p>
@@ -598,7 +598,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     }
 
     /**
-     * Get greatest known seq ID as reported by the server.
+     * Get the greatest known seq ID as reported by the server.
      * @return greatest known seq ID.
      */
     public int getSeq() {
@@ -606,7 +606,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     }
 
     /**
-     * Update greatest known seq ID.
+     * Update the greatest known seq ID.
      * @param seq new seq ID.
      */
     public void setSeq(int seq) {
@@ -854,7 +854,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     }
 
     /**
-     * Check if user has Write (W) permission.
+     * Check if user has 'Write' (W) permission.
      */
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public boolean isWriter() {
@@ -1791,7 +1791,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     }
 
     /**
-     * Send a recording notification to server. Ensure we do not sent too many.
+     * Send a recording notification to server. Ensure we do not send too many.
      */
     public void noteRecording(boolean audioOnly) {
         long now = System.currentTimeMillis();
@@ -1805,7 +1805,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     }
 
     /**
-     * Send a key press notification to server. Ensure we do not sent too many.
+     * Send a key press notification to server. Ensure we do not send too many.
      */
     public void noteKeyPress() {
         long now = System.currentTimeMillis();
@@ -2276,7 +2276,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
                 // A topic subscriber has updated his description.
                 if (pres.src != null && mTinode.getTopic(pres.src) == null) {
                     // Issue {get sub} only if the current user has no relationship with the updated user.
-                    // Otherwise 'me' will issue a {get desc} request.
+                    // Otherwise, the 'me' will issue a {get desc} request.
                     getMeta(getMetaGetBuilder().withSub(pres.src).build());
                 }
                 break;
