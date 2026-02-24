@@ -3,6 +3,7 @@ package co.tinode.tindroid;
 import android.annotation.SuppressLint;
 import android.os.Build;
 import android.telecom.CallAudioState;
+import android.text.TextUtils;
 import android.util.Log;
 
 import com.google.firebase.messaging.FirebaseMessaging;
@@ -46,8 +47,7 @@ public class Cache {
     // Current video call.
     private CallInProgress mCallInProgress = null;
 
-    private String mWallpaper;
-    private int mWallpaperSize;
+    private boolean mFCMTokenRequested = false;
 
     @SuppressLint("UnsafeOptInUsageError")
     public static synchronized Tinode getTinode() {
@@ -138,14 +138,39 @@ public class Cache {
             TindroidApp.retainCache(sInstance);
         }
 
-        FirebaseMessaging fbId = FirebaseMessaging.getInstance();
-        //noinspection ConstantConditions: Google lies about getInstance not returning null.
-        if (fbId != null) {
-            fbId.getToken().addOnSuccessListener(token -> {
-                if (sInstance.mTinode != null) {
-                    sInstance.mTinode.setDeviceToken(token);
-                }
-            });
+        if (!sInstance.mFCMTokenRequested) {
+            FirebaseMessaging fbId = FirebaseMessaging.getInstance();
+            //noinspection ConstantConditions: Google lies about getInstance not returning null.
+            if (fbId != null) {
+                sInstance.mFCMTokenRequested = true;
+                fbId.getToken().addOnCompleteListener(task -> {
+                    if (!task.isSuccessful()) {
+                        // Retry to fetch token later.
+                        sInstance.mFCMTokenRequested = false;
+                        Log.w(TAG, "Fetching FCM registration token failed", task.getException());
+                        return;
+                    }
+                    String token = task.getResult();
+                    if (sInstance.mTinode != null) {
+                        sInstance.mTinode.setDeviceToken(token)
+                                .thenCatch(new PromisedReply.FailureListener<>() {
+                                    @Override
+                                    public <E extends Exception> PromisedReply<ServerMessage> onFailure(E err) {
+                                        String message = err.getMessage();
+                                        if (TextUtils.isEmpty(message)) {
+                                            message = err.getClass().getName();
+                                        }
+                                        Log.w(TAG, "Failed to update FCM token: " + message);
+                                        return null;
+                                    }
+                                });
+                    } else {
+                        Log.w(TAG, "Unable to report FCM token to server: not initialized");
+                    }
+                });
+            } else {
+                Log.w(TAG, "FirebaseMessaging not available");
+            }
         }
         return sInstance.mTinode;
     }
@@ -236,7 +261,7 @@ public class Cache {
 
     // Connect to 'me' topic.
     @SuppressWarnings("unchecked")
-    public static PromisedReply<ServerMessage> attachMeTopic(@NonNull MeTopic.MeListener l) {
+    public static PromisedReply<ServerMessage> attachMeTopic(@Nullable MeTopic.MeListener l) {
         final MeTopic<VxCard> me = getTinode().getOrCreateMeTopic();
         me.addListener(l);
 

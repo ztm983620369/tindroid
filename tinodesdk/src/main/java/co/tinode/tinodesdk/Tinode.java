@@ -206,6 +206,10 @@ public class Tinode {
     private String mServerVersion = null;
     private String mServerBuild = null;
     private String mDeviceToken = null;
+    // Device received a new token but has not synched it to the server yet.
+    private String mPendingDeviceToken = null;
+    // Promise resolved when device ID is synced with the server.
+    private PromisedReply<ServerMessage> mDeviceTokenPromise = null;
     private String mLanguage = null;
     private String mOsVersion;
     // Counter for the active background connections.
@@ -1354,42 +1358,74 @@ public class Tinode {
      *
      * @param token device token; to delete token pass NULL_VALUE
      */
-    public PromisedReply<ServerMessage> setDeviceToken(final String token) {
-        if (!isAuthenticated()) {
-            // Don't send a message if the client is not logged in.
-            return new PromisedReply<>(new AuthenticationRequiredException());
-        }
-        // If token is not initialized, try to read one from storage.
+    public PromisedReply<ServerMessage> setDeviceToken(@NotNull final String token) {
+        // If the current token is not initialized, try to read one from storage.
         if (mDeviceToken == null && mStore != null) {
             mDeviceToken = mStore.getDeviceToken();
         }
-        // Check if token has changed
-        if (mDeviceToken == null || !mDeviceToken.equals(token)) {
-            // Cache token here assuming the call to server does not fail. If it fails clear the cached token.
-            // This prevents multiple unnecessary calls to the server with the same token.
-            mDeviceToken = NULL_VALUE.equals(token) ? null : token;
-            if (mStore != null) {
-                mStore.saveDeviceToken(mDeviceToken);
-            }
 
-            ClientMessage msg = new ClientMessage(new MsgClientHi(getNextId(), null, null,
-                    token, null, null));
-            return sendWithPromise(msg, msg.hi.id).thenCatch(new PromisedReply.FailureListener<>() {
-                @Override
-                public PromisedReply<ServerMessage> onFailure(Exception err) {
-                    // Clear cached value on failure to allow for retries.
-                    mDeviceToken = null;
-                    if (mStore != null) {
-                        mStore.saveDeviceToken(null);
-                    }
-                    return null;
-                }
-            });
+        if (mDeviceToken == null && NULL_VALUE.equals(token)) {
+            // No change: request to clear the token, but it's already cleared.
+            return new PromisedReply<>((ServerMessage) null);
+        }
 
-        } else {
+        if (mDeviceToken != null && !mDeviceToken.equals(token)) {
             // No change: return resolved promise.
             return new PromisedReply<>((ServerMessage) null);
         }
+
+        // The token has changed.
+        if (mPendingDeviceToken != null && mPendingDeviceToken.equals(token)) {
+            // This request is already pending, reject duplicate request.
+            return new PromisedReply<>(new InProgressException());
+        }
+
+        mPendingDeviceToken = token;
+        // If the session is not authenticated, wait till successful login.
+        if (!isAuthenticated()) {
+            mDeviceTokenPromise = new PromisedReply<>();
+            return mDeviceTokenPromise;
+        }
+
+        // The session is authenticated, send the token to the server right away.
+        return syncDeviceToken(token);
+    }
+
+    /**
+     * Send device token to server assuming all preconditions are met.
+     * @param token token to send to the server (could be NULL_VALUE).
+     * @return PromisedReply with the result of the call.
+     */
+    protected  PromisedReply<ServerMessage> syncDeviceToken(final String token) {
+        ClientMessage msg = new ClientMessage(new MsgClientHi(getNextId(), null, null,
+                token, null, null));
+        return sendWithPromise(msg, msg.hi.id)
+                .thenApply(new PromisedReply.SuccessListener<>() {
+                    @Override
+                    public PromisedReply<ServerMessage> onSuccess(ServerMessage result) throws Exception {
+                        mPendingDeviceToken = null;
+                        if (mDeviceTokenPromise != null) {
+                            mDeviceTokenPromise.resolve(result);
+                            mDeviceTokenPromise = null;
+                        }
+                        // Save the token to DB for future use.
+                        mDeviceToken = NULL_VALUE.equals(token) ? null : token;
+                        if (mStore != null) {
+                            mStore.saveDeviceToken(mDeviceToken);
+                        }
+                        return null;
+                    }
+                }).thenCatch(new PromisedReply.FailureListener<>() {
+                    @Override
+                    public <E extends Exception> PromisedReply<ServerMessage> onFailure(E err) throws Exception {
+                        mPendingDeviceToken = null;
+                        if (mDeviceTokenPromise != null) {
+                            mDeviceTokenPromise.reject(err);
+                            mDeviceTokenPromise = null;
+                        }
+                        throw err;
+                    }
+                });
     }
 
     /**
@@ -1644,6 +1680,11 @@ public class Tinode {
             mConnAuth = true;
             setAutoLoginToken(mAuthToken);
             mNotifier.onLogin(ctrl.code, ctrl.text);
+
+            if (mPendingDeviceToken != null) {
+                // Need to complete previous request for device ID sync.
+                syncDeviceToken(mPendingDeviceToken);
+            }
         } else {
             // Maybe we got request to enter validation code.
             Iterator<String> it = ctrl.getStringIteratorParam("cred");
@@ -1704,7 +1745,7 @@ public class Tinode {
                 },
                 new PromisedReply.FailureListener<>() {
                     @Override
-                    public PromisedReply<ServerMessage> onFailure(Exception err) {
+                    public PromisedReply<ServerMessage> onFailure(Exception err) throws Exception {
                         mLoginInProgress = false;
                         if (err instanceof ServerResponseException sre) {
                             final int code = sre.getCode();
@@ -1712,6 +1753,11 @@ public class Tinode {
                                 mLoginCredentials = null;
                                 mAuthToken = null;
                                 mAuthTokenExpires = null;
+                                mPendingDeviceToken = null;
+                                if (mDeviceTokenPromise != null) {
+                                    mDeviceTokenPromise.reject(err);
+                                    mDeviceTokenPromise = null;
+                                }
                             }
 
                             mConnAuth = false;
@@ -1760,10 +1806,19 @@ public class Tinode {
         mServerParams = null;
         setAutoLoginToken(null);
 
+        mDeviceToken = null;
         if (mStore != null) {
             // Clear token here, because of logout setDeviceToken will not be able to clear it.
             mStore.saveDeviceToken(null);
             mStore.logout();
+        }
+
+        mPendingDeviceToken = null;
+        if (mDeviceTokenPromise != null) {
+            try {
+                mDeviceTokenPromise.reject(new ServerResponseException(503, "disconnected"));
+                mDeviceTokenPromise = null;
+            } catch (Exception ignored) {}
         }
 
         // Best effort to clear device token on logout.

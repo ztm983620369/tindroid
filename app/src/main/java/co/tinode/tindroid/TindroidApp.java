@@ -352,7 +352,7 @@ public class TindroidApp extends Application implements DefaultLifecycleObserver
     @SuppressWarnings("resource") // Intentionally not using try-with-resources to avoid blocking main thread.
     @Override
     public void onStart(@NonNull LifecycleOwner owner) {
-        // Check if the app was installed from an URL with attributed installation source.
+        // Check if the app was installed from a URL with attributed installation source.
         // If yes, get the config from hosts.tinode.co.
         if (UiUtils.isAppFirstRun(sContext)) {
             Executors.newSingleThreadExecutor().execute(() ->

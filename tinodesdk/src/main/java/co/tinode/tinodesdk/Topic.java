@@ -137,7 +137,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
     /**
      * Start a new topic.
      * <p>
-     * Construct {@code typeOfT} with one of {@code
+     * Construct {@code typeOf T} with one of {@code
      * com.fasterxml.jackson.databind.type.TypeFactory.constructXYZ()} methods such as
      * {@code mMyConnectionInstance.getTypeFactory().constructType(MyPayloadClass.class)}.
      * <p>
