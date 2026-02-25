@@ -44,8 +44,8 @@ public class Cache {
     // Currently active topic.
     private String mTopicSelected = null;
 
-    // Current video call.
-    private CallInProgress mCallInProgress = null;
+    // Current video call. Volatile for visibility across threads.
+    private volatile CallInProgress mCallInProgress = null;
 
     private boolean mFCMTokenRequested = false;
 
@@ -187,47 +187,57 @@ public class Cache {
     }
 
     public static CallInProgress getCallInProgress() {
-        return sInstance.mCallInProgress;
+        synchronized (sInstance) {
+            return sInstance.mCallInProgress;
+        }
     }
 
     public static void prepareNewCall(@NonNull String topic, int seq, @Nullable CallConnection conn) {
-        if (sInstance.mCallInProgress == null) {
-            sInstance.mCallInProgress = new CallInProgress(topic, seq, conn);
-        } else if (!sInstance.mCallInProgress.equals(topic, seq)) {
-            // Include stacktrace to identify the caller which attempted to start a conflicting call.
-            throw new IllegalStateException("prepareNewCall called while another call is in progress"  +
-                    "\n\tNew: " + topic + ":" + seq);
+        synchronized (sInstance) {
+            if (sInstance.mCallInProgress == null) {
+                sInstance.mCallInProgress = new CallInProgress(topic, seq, conn);
+            } else if (!sInstance.mCallInProgress.equals(topic, seq)) {
+                // Include stacktrace to identify the caller which attempted to start a conflicting call.
+                throw new IllegalStateException("prepareNewCall called while another call is in progress" +
+                        "\n\tNew: " + topic + ":" + seq);
+            }
         }
     }
 
     public static void setCallActive(String topic, int seqId) {
-        if (sInstance.mCallInProgress != null) {
-            try {
-                sInstance.mCallInProgress.setCallActive(topic, seqId);
-            } catch (IllegalArgumentException iae) {
-                // Preserve fatal behavior but add context about the cache state.
-                throw new IllegalArgumentException("setCallActive failed. Existing=" +
-                        sInstance.mCallInProgress +
-                        " New=" + topic + ":" + seqId + "; err=" + iae.getMessage());
+        synchronized (sInstance) {
+            if (sInstance.mCallInProgress != null) {
+                try {
+                    sInstance.mCallInProgress.setCallActive(topic, seqId);
+                } catch (IllegalArgumentException iae) {
+                    // Preserve fatal behavior but add context about the cache state.
+                    throw new IllegalArgumentException("setCallActive failed. Existing=" +
+                            sInstance.mCallInProgress +
+                            " New=" + topic + ":" + seqId + "; err=" + iae.getMessage());
+                }
+            } else {
+                throw new IllegalStateException("setCallActive without prepareNewCall, New="
+                        + topic + ":" + seqId);
             }
-        } else {
-            throw new IllegalStateException("setCallActive without prepareNewCall, New="
-                    + topic + ":" + seqId);
         }
     }
 
     public static void setCallConnected() {
-        if (sInstance.mCallInProgress != null) {
-            sInstance.mCallInProgress.setCallConnected();
-        } else {
-            Log.e(TAG, "Attempt to mark call connected with no configured call");
+        synchronized (sInstance) {
+            if (sInstance.mCallInProgress != null) {
+                sInstance.mCallInProgress.setCallConnected();
+            } else {
+                Log.e(TAG, "Attempt to mark call connected with no configured call");
+            }
         }
     }
 
     public static void endCallInProgress() {
-        if (sInstance.mCallInProgress != null) {
-            sInstance.mCallInProgress.endCall();
-            sInstance.mCallInProgress = null;
+        synchronized (sInstance) {
+            if (sInstance.mCallInProgress != null) {
+                sInstance.mCallInProgress.endCall();
+                sInstance.mCallInProgress = null;
+            }
         }
     }
 
