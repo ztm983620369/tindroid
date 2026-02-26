@@ -233,6 +233,22 @@ public class CallManager {
 
     public static void showOutgoingCallUi(Context context, String topicName,
                                           boolean audioOnly, CallConnection conn) {
+        CallInProgress existingCall = Cache.getCallInProgress();
+        if (existingCall != null) {
+            if (existingCall.isConnected() || existingCall.isConnectionUseful()) {
+                // A real active call is in progress (ringing or connected). Don't clobber it.
+                Log.w(TAG, "Cannot start outgoing call: another call is active: " + existingCall);
+                if (conn != null) {
+                    conn.setDisconnected(new android.telecom.DisconnectCause(
+                            android.telecom.DisconnectCause.BUSY));
+                    conn.destroy();
+                }
+                return;
+            }
+            // Stale/zombie call left over from a previous session. Clean it up.
+            Log.w(TAG, "Ending stale call before starting new outgoing call: " + existingCall);
+            Cache.endCallInProgress();
+        }
         Cache.prepareNewCall(topicName, 0, conn);
 
         Intent intent = new Intent(context, CallActivity.class);

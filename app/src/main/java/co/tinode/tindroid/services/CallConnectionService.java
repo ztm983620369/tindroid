@@ -73,6 +73,8 @@ public class CallConnectionService extends ConnectionService {
 
         conn.setConnectionProperties(Connection.PROPERTY_SELF_MANAGED);
 
+        // This throws but shouldn't. We are not catching here to be able to find
+        // the root cause of the problem (data race).
         Cache.prepareNewCall(callerUri.getSchemeSpecificPart(), seq, conn);
 
         conn.setConnectionCapabilities(Connection.CAPABILITY_MUTE);

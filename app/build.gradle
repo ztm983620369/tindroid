@@ -87,7 +87,7 @@ dependencies {
     implementation "androidx.camera:camera-view:${camerax_version}"
     implementation "androidx.camera:camera-lifecycle:${camerax_version}"
 
-    implementation 'androidx.activity:activity:1.12.3'
+    implementation 'androidx.activity:activity:1.12.4'
     implementation 'androidx.appcompat:appcompat:1.7.1'
     implementation 'androidx.cardview:cardview:1.0.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.2.1'
@@ -122,7 +122,7 @@ dependencies {
     implementation 'com.google.firebase:firebase-messaging:25.0.1'
     implementation 'com.google.mlkit:barcode-scanning:17.3.0'
 
-    implementation 'com.googlecode.libphonenumber:libphonenumber:9.0.23'
+    implementation 'com.googlecode.libphonenumber:libphonenumber:9.0.25'
 
     // WebRTC.
     implementation 'com.dafruits:webrtc:123.0.0'
