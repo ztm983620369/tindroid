@@ -49,6 +49,8 @@
     <string name="action_delete_group">Şterge conversaţia…</string>
     <string name="action_leave_topic">Părăseşte conversaţia…</string>
     <string name="action_video_call">Apel video</string>
+    <string name="add_reaction">Adaugă reacție</string>
+    <string name="show_more">Arată mai mult</string>
 
     <string name="avatar">Poză avatar</string>
     <string name="image_is_unavailable">Imaginea nu este disponibilă</string>

@@ -282,6 +282,8 @@
     <string name="lock_recording_for_long_messages">鎖定用於錄製長音頻消息</string>
     <string name="video_calls_unavailable">無法進行視頻通話</string>
     <string name="action_video_call">視頻電話</string>
+    <string name="add_reaction">新增回應</string>
+    <string name="show_more">顯示更多</string>
     <string name="outgoing_call">撥出電話</string>
     <string name="incoming_call">來電</string>
     <string name="finish_call_button">結束通話</string>

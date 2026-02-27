@@ -48,6 +48,8 @@
     <string name="action_offline">Sin conexión</string>
     <string name="action_delete_group">Eliminar conversación…</string>
     <string name="action_leave_topic">Dejar conversación…</string>
+    <string name="add_reaction">Agregar reacción</string>
+    <string name="show_more">Mostrar más</string>
 
     <string name="avatar">Imagen de avatar</string>
     <string name="image_is_unavailable">La imagen no está disponible</string>

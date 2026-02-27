@@ -269,6 +269,8 @@
     <string name="toggle_microphone_button">Перемикач звуку</string>
     <string name="toggle_camera_button">Перемикач відео</string>
     <string name="action_video_call">Відео дзвінок</string>
+    <string name="add_reaction">Додати реакцію</string>
+    <string name="show_more">Показати більше</string>
     <string name="outgoing_call">Вихідний дзвінок</string>
     <string name="incoming_call">Вхідний дзвінок</string>
     <string name="copied_to_clipboard">Скопійовано в буфер обміну</string>

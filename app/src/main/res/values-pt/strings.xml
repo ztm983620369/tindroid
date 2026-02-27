@@ -284,6 +284,8 @@
     <string name="record_audio_button_hint">Reproduzir audio da gravação</string>
     <string name="video_calls_unavailable">Chamada de vídeo indisponível</string>
     <string name="action_video_call">Chamada de vídeo</string>
+    <string name="add_reaction">Adicionar reação</string>
+    <string name="show_more">Mostrar mais</string>
     <string name="outgoing_call">Chamada de saída</string>
     <string name="incoming_call">Recebendo chamada</string>
     <string name="finish_call_button">Finalizar chamada</string>

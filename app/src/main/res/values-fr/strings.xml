@@ -48,6 +48,8 @@
     <string name="action_offline">Travailler hors ligne</string>
     <string name="action_delete_group">Effacer la conversation…</string>
     <string name="action_leave_topic">Quitter la conversation…</string>
+    <string name="add_reaction">Ajouter une réaction</string>
+    <string name="show_more">Afficher plus</string>
 
     <string name="avatar">Image d\'avatar</string>
     <string name="image_is_unavailable">Image indisponible </string>

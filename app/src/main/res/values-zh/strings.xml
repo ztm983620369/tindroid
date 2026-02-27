@@ -283,6 +283,8 @@
     <string name="deleted">已删除</string>
     <string name="video_calls_unavailable">无法进行视频通话</string>
     <string name="action_video_call">视频电话</string>
+    <string name="add_reaction">添加回应</string>
+    <string name="show_more">显示更多</string>
     <string name="outgoing_call">拨出电话</string>
     <string name="incoming_call">来电</string>
     <string name="finish_call_button">结束通话</string>

@@ -48,6 +48,8 @@
     <string name="action_offline">Offline</string>
     <string name="action_delete_group">Gruppe löschen…</string>
     <string name="action_leave_topic">Thema verlassen…</string>
+    <string name="add_reaction">Reaktion hinzufügen</string>
+    <string name="show_more">Mehr anzeigen</string>
 
     <string name="avatar">Profilbild</string>
     <string name="image_is_unavailable">Das Bild ist nicht verfügbar</string>

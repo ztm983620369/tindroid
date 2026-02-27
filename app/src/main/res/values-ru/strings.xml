@@ -269,6 +269,8 @@
     <string name="toggle_microphone_button">Переключатель звука</string>
     <string name="toggle_camera_button">Переключатель видео</string>
     <string name="action_video_call">Видео звонок</string>
+    <string name="add_reaction">Добавить реакцию</string>
+    <string name="show_more">Показать ещё</string>
     <string name="outgoing_call">Исходящий звонок</string>
     <string name="incoming_call">Входящий звонок</string>
     <string name="copied_to_clipboard">Скопировано в буфер обмена</string>

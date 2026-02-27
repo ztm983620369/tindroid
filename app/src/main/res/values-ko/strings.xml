@@ -281,6 +281,8 @@
     <string name="lock_recording_for_long_messages">긴 메시지에 대한 녹음 잠금</string>
     <string name="video_calls_unavailable">화상 통화를 사용할 수 없음</string>
     <string name="action_video_call">영상 통화</string>
+    <string name="add_reaction">반응 추가</string>
+    <string name="show_more">더 보기</string>
     <string name="outgoing_call">발신 전화</string>
     <string name="incoming_call">수신 전화</string>
     <string name="finish_call_button">통화 종료</string>

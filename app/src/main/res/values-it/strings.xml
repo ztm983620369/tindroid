@@ -49,6 +49,8 @@
     <string name="action_delete_group">Cancella la conversazione…</string>
     <string name="action_leave_topic">Lascia la conversazione…</string>
     <string name="action_video_call">Videochiamata</string>
+    <string name="add_reaction">Aggiungi reazione</string>
+    <string name="show_more">Mostra altro</string>
 
     <string name="avatar">Foto dell\'avatar</string>
     <string name="image_is_unavailable">Immagine non disponibile</string>
