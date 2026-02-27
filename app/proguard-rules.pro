@@ -49,3 +49,8 @@
 ##---------------Begin: proguard configuration for Pusher Java Client  ----------
 -dontwarn org.slf4j.impl.StaticLoggerBinder
 ##---------------End: proguard configuration for Pusher Java Client  ----------
+
+# Keep OSS Licenses classes to prevent NPE crash in OssLicensesActivity
+# See: https://issuetracker.google.com/issues/176696086
+-keep class com.google.android.gms.oss.licenses.** { *; }
+-keep class com.google.android.gms.internal.oss_licenses.** { *; }
