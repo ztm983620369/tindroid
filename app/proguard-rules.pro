@@ -30,6 +30,13 @@
 # WebRTC SDP and ICE candidate auxiliary classes serialized into json.
 -keepattributes InnerClasses
 
+# Keep all Fragment subclasses. Fragment class names are saved to the back-stack state
+# by the FragmentManager and must survive R8/ProGuard minification; otherwise Android
+# cannot reinstantiate them after activity recreation (rotation, process death, etc.)
+# and throws Fragment$InstantiationException: could not find Fragment constructor.
+-keep public class * extends androidx.fragment.app.Fragment
+-keep public class * extends android.app.Fragment
+
 # Don't mangle classes which are saved to DB.
 -keep class * implements java.io.Serializable { *; }
 
