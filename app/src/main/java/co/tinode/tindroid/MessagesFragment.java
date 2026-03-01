@@ -973,8 +973,11 @@ public class MessagesFragment extends Fragment implements MenuProvider {
         if (args != null) {
             args.putString(Const.INTENT_EXTRA_TOPIC, mTopicName);
             // Save the text in the send field.
-            String draft = ((EditText) activity.findViewById(R.id.editMessage)).getText().toString().trim();
-            args.putString(MESSAGE_TO_SEND, draft);
+            EditText editMessage = activity.findViewById(R.id.editMessage);
+            if (editMessage != null) {
+                String draft = editMessage.getText().toString().trim();
+                args.putString(MESSAGE_TO_SEND, draft);
+            }
             args.putString(MESSAGE_TEXT_ACTION, mTextAction.name());
             args.putInt(MESSAGE_QUOTED_SEQ_ID, mQuotedSeqID);
             args.putSerializable(MESSAGE_QUOTED, mQuote);

@@ -80,10 +80,13 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ViewHolder> 
             newTopicIndex.put(t.getName(), newTopicIndex.size());
         }
 
-        mTopics = new ArrayList<>(newTopics);
-        mTopicIndex = newTopicIndex;
+        final List<ComTopic<VxCard>> newTopicList = new ArrayList<>(newTopics);
 
-        activity.runOnUiThread(this::notifyDataSetChanged);
+        activity.runOnUiThread(() -> {
+            mTopics = newTopicList;
+            mTopicIndex = newTopicIndex;
+            notifyDataSetChanged();
+        });
     }
 
     @NonNull
