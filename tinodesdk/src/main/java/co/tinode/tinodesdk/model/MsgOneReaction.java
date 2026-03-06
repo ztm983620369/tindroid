@@ -1,7 +1,14 @@
 package co.tinode.tinodesdk.model;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
+import java.io.Serializable;
+
+import static com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT;
+
 // MsgOneReaction to message.
-public class MsgOneReaction {
+@JsonInclude(NON_DEFAULT)
+public class MsgOneReaction implements Serializable {
     // Most recent (greatest) reaction ID for this content.
     public int mrrid;
     // MsgOneReaction content (emoji etc.).
