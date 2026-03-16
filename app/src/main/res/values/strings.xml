@@ -354,6 +354,16 @@
     <string name="password_changed">Password changed</string>
     <string name="my_code">My Code</string>
     <string name="scan_code">Scan code</string>
+    <string name="mini_programs">Mini Programs</string>
+    <string name="mini_program_scan">Scan</string>
+    <string name="mini_program_pay">Pay</string>
+    <string name="mini_program_favorites">Favorites</string>
+    <string name="mini_program_nearby">Nearby</string>
+    <string name="mini_program_moments">Moments</string>
+    <string name="mini_program_games">Games</string>
+    <string name="mini_program_search">Search</string>
+    <string name="mini_program_more">More</string>
+    <string name="mini_program_unavailable">%1$s is not available yet.</string>
     <string name="hint_enter_code">Configuration code</string>
     <string name="code_required">Code required</string>
     <string name="configure_connection">Configure connection</string>

@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.flexbox.FlexboxLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/attachTrayPanel"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/composer_dock_bg"
+    android:paddingStart="16dp"
+    android:paddingTop="16dp"
+    android:paddingEnd="16dp"
+    android:paddingBottom="12dp"
+    app:flexWrap="wrap"
+    tools:visibility="visible">
+
+    <LinearLayout
+        android:id="@+id/trayCamera"
+        android:layout_width="80dp"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="12dp"
+        android:gravity="center_horizontal"
+        android:orientation="vertical">
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/composer_input_bg"
+            android:contentDescription="@string/take_photo"
+            android:padding="14dp"
+            app:srcCompat="@drawable/ic_photo_camera"
+            app:tint="?attr/colorAccent" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/take_photo"
+            android:textColor="?android:textColorSecondary"
+            android:textSize="12sp"
+            tools:ignore="SmallSp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/trayGallery"
+        android:layout_width="80dp"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="12dp"
+        android:gravity="center_horizontal"
+        android:orientation="vertical">
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/composer_input_bg"
+            android:contentDescription="@string/select_from_gallery"
+            android:padding="14dp"
+            app:srcCompat="@drawable/ic_image"
+            app:tint="?attr/colorAccent" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/select_from_gallery"
+            android:textColor="?android:textColorSecondary"
+            android:textSize="12sp"
+            tools:ignore="SmallSp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/trayVideo"
+        android:layout_width="80dp"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="12dp"
+        android:gravity="center_horizontal"
+        android:orientation="vertical">
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/composer_input_bg"
+            android:contentDescription="@string/record_video"
+            android:padding="14dp"
+            app:srcCompat="@drawable/ic_videocam"
+            app:tint="?attr/colorAccent" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/record_video"
+            android:textColor="?android:textColorSecondary"
+            android:textSize="12sp"
+            tools:ignore="SmallSp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/trayFile"
+        android:layout_width="80dp"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp"
+        android:gravity="center_horizontal"
+        android:orientation="vertical">
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/composer_input_bg"
+            android:contentDescription="@string/send_file_button_hint"
+            android:padding="14dp"
+            app:srcCompat="@drawable/ic_file"
+            app:tint="?attr/colorAccent" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/attachment"
+            android:textColor="?android:textColorSecondary"
+            android:textSize="12sp"
+            tools:ignore="SmallSp" />
+    </LinearLayout>
+</com.google.android.flexbox.FlexboxLayout>

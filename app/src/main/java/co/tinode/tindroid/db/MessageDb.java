@@ -380,7 +380,7 @@ public class MessageDb implements BaseColumns {
      * @return cursor with the messages.
      */
     public static Cursor query(SQLiteDatabase db, long topicId, int pageCount, int pageSize) {
-        final String sql = "SELECT * FROM " + TABLE_NAME +
+        final String innerSql = "SELECT * FROM " + TABLE_NAME +
                 " WHERE "
                 + COLUMN_NAME_TOPIC_ID + "=" + topicId +
                 " AND "
@@ -388,6 +388,8 @@ public class MessageDb implements BaseColumns {
                 " ORDER BY "
                 + COLUMN_NAME_EFFECTIVE_SEQ + " DESC" +
                 " LIMIT " + (pageCount * pageSize);
+        final String sql = "SELECT * FROM (" + innerSql + ")" +
+                " ORDER BY " + COLUMN_NAME_EFFECTIVE_SEQ + " ASC";
 
         return db.rawQuery(sql, null);
     }
@@ -879,6 +881,65 @@ public class MessageDb implements BaseColumns {
      */
     public static long getId(Cursor cursor) {
         return cursor.getLong(0);
+    }
+
+    public static int getStatus(Cursor cursor) {
+        try {
+            return cursor.isClosed() ? BaseDb.Status.UNDEFINED.value : cursor.getInt(COLUMN_IDX_STATUS);
+        } catch (StaleDataException ex) {
+            Log.w(TAG, "Cursor closed", ex);
+            return BaseDb.Status.UNDEFINED.value;
+        }
+    }
+
+    public static int getEffectiveSeqId(Cursor cursor) {
+        try {
+            if (cursor.isClosed()) {
+                return 0;
+            }
+            return cursor.isNull(COLUMN_IDX_EFFECTIVE_SEQ) ? cursor.getInt(COLUMN_IDX_SEQ) : cursor.getInt(COLUMN_IDX_EFFECTIVE_SEQ);
+        } catch (StaleDataException ex) {
+            Log.w(TAG, "Cursor closed", ex);
+            return 0;
+        }
+    }
+
+    public static int getHigh(Cursor cursor) {
+        try {
+            if (cursor.isClosed()) {
+                return 0;
+            }
+            return cursor.isNull(COLUMN_IDX_HIGH) ? 0 : cursor.getInt(COLUMN_IDX_HIGH);
+        } catch (StaleDataException ex) {
+            Log.w(TAG, "Cursor closed", ex);
+            return 0;
+        }
+    }
+
+    public static int getDelId(Cursor cursor) {
+        try {
+            if (cursor.isClosed()) {
+                return 0;
+            }
+            return cursor.isNull(COLUMN_IDX_DEL_ID) ? 0 : cursor.getInt(COLUMN_IDX_DEL_ID);
+        } catch (StaleDataException ex) {
+            Log.w(TAG, "Cursor closed", ex);
+            return 0;
+        }
+    }
+
+    @Nullable
+    public static String getSender(Cursor cursor) {
+        try {
+            return cursor.isClosed() ? null : cursor.getString(COLUMN_IDX_SENDER);
+        } catch (StaleDataException ex) {
+            Log.w(TAG, "Cursor closed", ex);
+            return null;
+        }
+    }
+
+    public static boolean isMine(Cursor cursor) {
+        return BaseDb.isMe(getSender(cursor));
     }
 
     /**

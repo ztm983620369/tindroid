@@ -68,34 +68,62 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/composerTrayHost"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        card_view:cardBackgroundColor="?android:colorBackground"
-        card_view:cardElevation="@dimen/cardview_elevation"
-        card_view:cardUseCompatPadding="true"
+        card_view:cardBackgroundColor="@android:color/transparent"
+        card_view:cardElevation="0dp"
+        card_view:cardUseCompatPadding="false"
         tools:layout="@layout/fragment_send_message">
 
-        <FrameLayout
+        <LinearLayout
+            android:id="@+id/composerSurface"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:animateLayoutChanges="true"
-            android:measureAllChildren="false">
+            android:background="@drawable/composer_dock_bg"
+            android:orientation="vertical">
 
-            <include layout="@layout/fragment_send_message" />
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:alpha="0.55"
+                android:background="@color/colorListDivider" />
 
-            <include layout="@layout/fragment_messaging_disabled" />
+            <FrameLayout
+                android:id="@+id/composerBarHost"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:measureAllChildren="false">
 
-            <include layout="@layout/fragment_enable_peer" />
+                <include layout="@layout/fragment_send_message" />
 
-            <include layout="@layout/fragment_forward_message" />
+                <include layout="@layout/fragment_messaging_disabled" />
 
-            <include layout="@layout/fragment_record_audio" />
+                <include layout="@layout/fragment_enable_peer" />
 
-            <include layout="@layout/fragment_record_audio_short" />
-        </FrameLayout>
+                <include layout="@layout/fragment_forward_message" />
+
+                <include layout="@layout/fragment_record_audio" />
+
+                <include layout="@layout/fragment_record_audio_short" />
+            </FrameLayout>
+        </LinearLayout>
 
     </androidx.cardview.widget.CardView>
+
+    <FrameLayout
+        android:id="@+id/composerTrayHost"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="@android:color/transparent"
+        android:clipToPadding="false"
+        android:elevation="2dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <include layout="@layout/fragment_message_tray_attach" />
+    </FrameLayout>
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/goToLatest"

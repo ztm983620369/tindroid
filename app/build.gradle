@@ -1,7 +1,13 @@
 apply plugin: 'com.android.application'
-apply plugin: 'com.google.gms.google-services'
 apply plugin: 'com.google.firebase.crashlytics'
 apply plugin: 'com.google.android.gms.oss-licenses-plugin'
+
+def googleServicesFile = project.file("google-services.json")
+if (googleServicesFile.exists()) {
+    apply plugin: 'com.google.gms.google-services'
+} else {
+    logger.lifecycle("google-services.json is missing; skipping Google Services plugin for this build.")
+}
 
 // See explanation here: https://stackoverflow.com/questions/20562189/sign-apk-without-putting-keystore-info-in-build-gradle
 def keystorePropertiesFile = rootProject.file("keystore.properties")
@@ -40,14 +46,17 @@ android {
 
     buildTypes {
         debug {
-            resValue "string", "default_host_name", '"sandbox.tinode.co"'
+            resValue "string", "default_host_name", '"119.45.226.7:6060"'
         }
         release {
-            resValue "string", "default_host_name", '"api.tinode.co"'
+            resValue "string", "default_host_name", '"119.45.226.7:6060"'
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.release
+            firebaseCrashlytics {
+                mappingFileUploadEnabled googleServicesFile.exists()
+            }
         }
     }
 
@@ -134,6 +143,7 @@ dependencies {
     implementation 'io.coil-kt:coil:2.7.0'
     // QR Code generator.
     implementation 'io.nayuki:qrcodegen:1.8.0'
+    implementation 'androidx.dynamicanimation:dynamicanimation:1.0.0'
 
     annotationProcessor 'androidx.lifecycle:lifecycle-common-java8:2.10.0'
 

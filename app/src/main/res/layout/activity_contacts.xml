@@ -1,17 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
+<co.tinode.tindroid.widgets.WeChatPullLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/homePullLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
+    android:background="?android:colorBackground"
     tools:context=".ChatsActivity">
 
-    <include layout="@layout/toolbar" />
+    <include layout="@layout/panel_mini_programs" />
 
-    <FrameLayout
-        android:id="@+id/contentFragment"
+    <LinearLayout
+        android:id="@+id/homeForeground"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"/>
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:background="?android:colorBackground">
 
-</LinearLayout>
+        <include layout="@layout/home_appbar" />
+
+        <FrameLayout
+            android:id="@+id/contentFragment"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="?android:colorBackground" />
+
+    </LinearLayout>
+
+</co.tinode.tindroid.widgets.WeChatPullLayout>

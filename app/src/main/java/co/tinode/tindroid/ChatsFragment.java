@@ -29,6 +29,7 @@ import androidx.recyclerview.selection.SelectionTracker;
 import androidx.recyclerview.selection.StorageStrategy;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.recyclerview.widget.SimpleItemAnimator;
 import co.tinode.tindroid.media.VxCard;
 import co.tinode.tindroid.widgets.CircleProgressView;
 import co.tinode.tindroid.widgets.HorizontalListDivider;
@@ -97,15 +98,20 @@ public class ChatsFragment extends Fragment implements ActionMode.Callback, UiUt
         RecyclerView rv = view.findViewById(R.id.chat_list);
         rv.setLayoutManager(new LinearLayoutManager(activity));
         rv.setHasFixedSize(true);
+        rv.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        rv.setNestedScrollingEnabled(true);
         rv.addItemDecoration(new HorizontalListDivider(activity));
+        if (rv.getItemAnimator() instanceof SimpleItemAnimator) {
+            ((SimpleItemAnimator) rv.getItemAnimator()).setSupportsChangeAnimations(false);
+        }
         mAdapter = new ChatsAdapter(activity, topicName -> {
             if (mActionMode != null || mIsBanned || activity.isFinishing() || activity.isDestroyed()) {
                 return;
             }
             Intent intent = new Intent(activity, MessageActivity.class);
-            intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
             intent.putExtra(Const.INTENT_EXTRA_TOPIC, topicName);
             activity.startActivity(intent);
+            activity.overridePendingTransition(R.anim.wechat_slide_in_right, R.anim.wechat_slide_out_left);
         }, t -> (t.isArchived() == mIsArchive) && (t.isJoiner() != mIsBanned));
         rv.setAdapter(mAdapter);
 

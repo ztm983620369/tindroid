@@ -48,12 +48,12 @@
     <color name="circularProgressFg">#FF212121</color>
 
     <!-- Background of message bubbles-->
-    <color name="colorMessageBubbleMine">#FFFAFAFA</color>
-    <color name="colorMessageBubbleMineFlashing">#FCCC</color>
-    <color name="colorMessageBubbleMineFlashingLight">#FEEE</color>
-    <color name="colorMessageBubbleOther">#FFC5E1A5</color>
-    <color name="colorMessageBubbleOtherFlashing">#FF85A165</color>
-    <color name="colorMessageBubbleOtherFlashingLight">#FFA5C185</color>
+    <color name="colorMessageBubbleMine">#FF95EC69</color>
+    <color name="colorMessageBubbleMineFlashing">#FF7ED654</color>
+    <color name="colorMessageBubbleMineFlashingLight">#FFB2F48E</color>
+    <color name="colorMessageBubbleOther">#FFFDFDFD</color>
+    <color name="colorMessageBubbleOtherFlashing">#FFE9E9E9</color>
+    <color name="colorMessageBubbleOtherFlashingLight">#FFFFFFFF</color>
 
     <color name="colorReplyBubble">#10333333</color>
     <color name="colorReplyText">#666666</color>
@@ -72,6 +72,8 @@
     <color name="colorImagePreviewBg">#CCCCCC</color>
 
     <color name="colorImagePlaceholder">#CCCCCC</color>
+    <color name="composerDockBg">#FFF4F4F4</color>
+    <color name="composerInputBg">#FFFFFFFF</color>
 
     <!-- Background colors for LetterTileDrawables. -->
     <array name="letter_tile_colors_light">

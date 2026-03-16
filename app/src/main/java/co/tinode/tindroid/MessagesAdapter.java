@@ -19,6 +19,7 @@ import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.text.Spannable;
 import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
@@ -39,6 +40,7 @@ import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.CheckBox;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
@@ -49,8 +51,10 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CancellationException;
@@ -65,11 +69,15 @@ import androidx.appcompat.widget.AppCompatImageButton;
 import androidx.core.app.ActivityCompat;
 import androidx.loader.app.LoaderManager;
 import androidx.loader.content.Loader;
+import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 import androidx.work.WorkInfo;
 import androidx.work.WorkManager;
+import androidx.dynamicanimation.animation.FloatValueHolder;
+import androidx.dynamicanimation.animation.SpringAnimation;
+import androidx.dynamicanimation.animation.SpringForce;
 
 import co.tinode.tindroid.db.BaseDb;
 import co.tinode.tindroid.db.MessageDb;
@@ -101,6 +109,9 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
 
     private static final int MESSAGES_TO_LOAD = 20;
 
+    private static final Object PAYLOAD_DELIVERY = new Object();
+    private static final Object PAYLOAD_SENDER = new Object();
+
     private static final int MESSAGES_QUERY_ID = 200;
 
     private static final String HARD_RESET = "hard_reset";
@@ -108,19 +119,24 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
     private static final int REFRESH_SOFT = 1;
     private static final int REFRESH_HARD = 2;
 
-    // Bits defining message bubble variations
-    // _TIP == "single", i.e. has a bubble tip.
-    // _DATE == the date bubble is visible.
+    // Bits defining WeChat-style message row variations.
     private static final int VIEWTYPE_SIDE_LEFT   = 0b000010;
     private static final int VIEWTYPE_SIDE_RIGHT  = 0b000100;
-    private static final int VIEWTYPE_TIP         = 0b001000;
-    private static final int VIEWTYPE_AVATAR      = 0b010000;
-    private static final int VIEWTYPE_DATE        = 0b100000;
+    private static final int VIEWTYPE_DATE        = 0b001000;
     private static final int VIEWTYPE_INVALID     = 0b000000;
 
     // Duration of a message bubble animation in ms.
     private static final int MESSAGE_BUBBLE_ANIMATION_SHORT = 150;
     private static final int MESSAGE_BUBBLE_ANIMATION_LONG = 600;
+
+    // New message enter animation (WeChat-like).
+    private static final int NEW_MESSAGE_ENTER_ANIMATION_DURATION = 260;
+    private static final float NEW_MESSAGE_ENTER_TRANSLATION_DP = 14f;
+    private static final float NEW_MESSAGE_ENTER_SCALE_FROM = 0.985f;
+
+    // Suppress list animations briefly after opening a topic to avoid a visible "refresh"
+    // during activity transition and initial sync.
+    private static final long ENTRY_ANIMATION_SUPPRESS_MS = 1200L;
 
     // Storage Permissions
     private static final int REQUEST_EXTERNAL_STORAGE = 1;
@@ -141,6 +157,13 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
     private String mTopicName = null;
     private SparseBooleanArray mSelectedItems = null;
     private int mPagesToLoad;
+
+    private long mMaxMessageId = View.NO_ID;
+    private final HashSet<Long> mAnimateOnBindMessageIds = new HashSet<>();
+    private SpringAnimation mBottomSpring = null;
+    private float mBottomSpringLastValue = 0f;
+    private long mLastOutgoingMessageId = View.NO_ID;
+    private long mSuppressAnimationsUntil = 0L;
 
     private final MediaControl mMediaControl;
 
@@ -269,8 +292,8 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
                 return -mid;
             }
 
-            // Messages are sorted in descending order by seq.
-            int cmp = -m.seq + seq;
+            // Messages are sorted in ascending order by seq.
+            int cmp = m.seq - seq;
             if (cmp < 0)
                 low = mid + 1;
             else if (cmp > 0)
@@ -286,6 +309,15 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
         super.onAttachedToRecyclerView(recyclerView);
 
         mRecyclerView = recyclerView;
+    }
+
+    @Override
+    public void onDetachedFromRecyclerView(@NonNull RecyclerView recyclerView) {
+        super.onDetachedFromRecyclerView(recyclerView);
+        cancelBottomSpring();
+        if (mRecyclerView == recyclerView) {
+            mRecyclerView = null;
+        }
     }
 
     // Confirmation dialog "Do you really want to delete message(s)"
@@ -354,9 +386,8 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
             return;
         }
 
-        // The list is inverted, so iterating messages in inverse order as well.
-        for (int i = positions.length - 1; i >= 0; i--) {
-            int pos = positions[i];
+        Arrays.sort(positions);
+        for (int pos : positions) {
             StoredMessage msg = getMessage(pos);
             if (msg != null) {
                 sb.append("\n[");
@@ -559,14 +590,8 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
         }
     }
 
-    private static int packViewType(int side, boolean tip, boolean avatar, boolean date) {
+    private static int packViewType(int side, boolean date) {
         int type = side;
-        if (tip) {
-            type |= VIEWTYPE_TIP;
-        }
-        if (avatar) {
-            type |= VIEWTYPE_AVATAR;
-        }
         if (date) {
             type |= VIEWTYPE_DATE;
         }
@@ -579,26 +604,17 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
         StoredMessage m = getMessage(position);
 
         if (m != null) {
-            long nextFrom = -2;
-            Date nextDate = null;
+            Date prevDate = null;
             if (position > 0) {
                 StoredMessage m2 = getMessage(position - 1);
-                if (m2 != null) {
-                    nextFrom = m2.userId;
-                    nextDate = m2.ts;
-                }
-            }
-            Date prevDate = null;
-            if (position < getItemCount() - 1) {
-                StoredMessage m2 = getMessage(position + 1);
                 if (m2 != null) {
                     prevDate = m2.ts;
                 }
             }
-            itemType = packViewType(m.isMine() ? VIEWTYPE_SIDE_RIGHT : VIEWTYPE_SIDE_LEFT,
-                    m.userId != nextFrom || !UiUtils.isSameDate(nextDate, m.ts),
-                    Topic.isGrpType(mTopicName) && !ComTopic.isChannel(mTopicName),
-                    !UiUtils.isSameDate(prevDate, m.ts));
+            MessageRowSpec rowSpec = MessageRowSpec.resolve(m.isMine(),
+                    Topic.isGrpType(mTopicName), ComTopic.isChannel(mTopicName), m.ts, prevDate);
+            itemType = packViewType(rowSpec.getSide() == MessageRowSpec.Side.RIGHT ?
+                    VIEWTYPE_SIDE_RIGHT : VIEWTYPE_SIDE_LEFT, rowSpec.showDateDivider());
         }
 
         return itemType;
@@ -611,21 +627,9 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
 
         int layoutId = -1;
         if ((viewType & VIEWTYPE_SIDE_LEFT) != 0) {
-            if ((viewType & VIEWTYPE_AVATAR) != 0 && (viewType & VIEWTYPE_TIP) != 0) {
-                layoutId = R.layout.message_left_single_avatar;
-            } else if ((viewType & VIEWTYPE_TIP) != 0) {
-                layoutId = R.layout.message_left_single;
-            } else if ((viewType & VIEWTYPE_AVATAR) != 0) {
-                layoutId = R.layout.message_left_avatar;
-            } else {
-                layoutId = R.layout.message_left;
-            }
+            layoutId = R.layout.message_left_wechat;
         } else if ((viewType & VIEWTYPE_SIDE_RIGHT) != 0) {
-            if ((viewType & VIEWTYPE_TIP) != 0) {
-                layoutId = R.layout.message_right_single;
-            } else {
-                layoutId = R.layout.message_right;
-            }
+            layoutId = R.layout.message_right_wechat;
         }
 
         View v = LayoutInflater.from(parent.getContext()).inflate(layoutId, parent, false);
@@ -643,9 +647,21 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
     @Override
     public void onBindViewHolder(@NonNull final ViewHolder holder, int position, @NonNull List<Object> payload) {
         if (!payload.isEmpty()) {
-            Float progress = (Float) payload.get(0);
-            holder.mProgressBar.setProgress((int) (progress * 100));
-            return;
+            for (Object item : payload) {
+                if (item instanceof Float) {
+                    Float progress = (Float) item;
+                    holder.mProgressBar.setProgress((int) (progress * 100));
+                    return;
+                }
+                if (item == PAYLOAD_DELIVERY) {
+                    bindDeliveryStatus(holder, position);
+                    return;
+                }
+                if (item == PAYLOAD_SENDER) {
+                    bindSenderInfo(holder, position);
+                    return;
+                }
+            }
         }
 
         onBindViewHolder(holder, position);
@@ -669,6 +685,10 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
         }
 
         final long msgId = m.getDbId();
+        resetNewMessageEnterState(holder);
+        if (msgId != View.NO_ID && mAnimateOnBindMessageIds.remove(msgId) && !animationsSuppressed()) {
+            animateNewMessageEnter(holder);
+        }
 
         boolean isEdited = m.isReplacement() && m.getHeader("webrtc") == null;
         boolean hasAttachment = m.content != null && m.content.getEntReferences() != null;
@@ -762,22 +782,33 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
 
         if (holder.mAvatar != null || holder.mUserName != null) {
             Subscription<VxCard, ?> sub = topic.getSubscription(m.from);
-            if (sub != null) {
-                if (holder.mAvatar != null) {
+            MessageRowSpec rowSpec = MessageRowSpec.resolve(m.isMine(),
+                    Topic.isGrpType(mTopicName), ComTopic.isChannel(mTopicName), m.ts, null);
+            if (holder.mAvatar != null) {
+                if (m.isMine()) {
+                    String myId = Cache.getTinode().getMyId();
+                    MeTopic<VxCard> me = Cache.getTinode().getMeTopic();
+                    UiUtils.setAvatar(holder.mAvatar, me != null ? me.getPub() : null, myId, false);
+                } else if (sub != null) {
                     UiUtils.setAvatar(holder.mAvatar, sub.pub, sub.user, false);
-                }
-
-                if (holder.mUserName != null && sub.pub != null) {
-                    holder.mUserName.setText(sub.pub.fn);
-                }
-            } else {
-                if (holder.mAvatar != null) {
+                } else {
                     holder.mAvatar.setImageResource(R.drawable.ic_person_circle);
                 }
-                if (holder.mUserName != null) {
+            }
+
+            if (holder.mUserName != null) {
+                boolean showName = rowSpec.showSenderName();
+                if (!showName) {
+                    holder.mUserName.setVisibility(View.GONE);
+                    holder.mUserName.setText(null);
+                } else if (sub != null && sub.pub != null) {
+                    holder.mUserName.setVisibility(View.VISIBLE);
+                    holder.mUserName.setText(sub.pub.fn);
+                } else {
                     Spannable span = new SpannableString(mActivity.getString(R.string.user_not_found));
                     span.setSpan(new StyleSpan(Typeface.ITALIC), 0, span.length(),
                             Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    holder.mUserName.setVisibility(View.VISIBLE);
                     holder.mUserName.setText(span);
                 }
             }
@@ -799,16 +830,12 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
                 holder.mEdited.setVisibility(isEdited ? View.VISIBLE : View.GONE);
             }
             if (holder.mMeta != null) {
-                holder.mMeta.setText(UtilsString.timeOnly(context, m.ts));
+                holder.mMeta.setVisibility(View.GONE);
+                holder.mMeta.setText(null);
             }
         }
 
-        if (holder.mDeliveredIcon != null) {
-            if ((holder.mViewType & VIEWTYPE_SIDE_RIGHT) != 0) {
-                UiUtils.setMessageStatusIcon(holder.mDeliveredIcon, m.status.value,
-                        topic.msgReadCount(m.seq), topic.msgRecvCount(m.seq));
-            }
-        }
+        bindDeliveredIcon(holder, m, topic);
 
         holder.itemView.setOnLongClickListener(v -> {
             int pos = holder.getBindingAdapterPosition();
@@ -859,8 +886,7 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
                         mm.isMine(), false);
             } else {
                 // Scroll then animate.
-                mRecyclerView.clearOnScrollListeners();
-                mRecyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+                RecyclerView.OnScrollListener listener = new RecyclerView.OnScrollListener() {
                     @Override
                     public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
                         super.onScrollStateChanged(recyclerView, newState);
@@ -871,7 +897,8 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
                                     mm.isMine(), false);
                         }
                     }
-                });
+                };
+                mRecyclerView.addOnScrollListener(listener);
                 mRecyclerView.smoothScrollToPosition(pos);
             }
         }
@@ -902,6 +929,301 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
                 vh.mMessageBubble.setBackgroundTintList(ColorStateList.valueOf((int) animator.getAnimatedValue()))
         );
         colorAnimation.start();
+    }
+
+    private void bindDeliveryStatus(@NonNull ViewHolder holder, int position) {
+        // Only update light-weight delivery/read/recv indicators to avoid a full row rebind.
+        if (mCursor == null) {
+            return;
+        }
+        final ComTopic<VxCard> topic = (ComTopic<VxCard>) Cache.getTinode().getTopic(mTopicName);
+        final StoredMessage message = getMessage(position);
+        if (topic == null || message == null) {
+            return;
+        }
+        bindDeliveredIcon(holder, message, topic);
+    }
+
+    private void bindSenderInfo(@NonNull ViewHolder holder, int position) {
+        if (mCursor == null || mCursor.isClosed()) {
+            return;
+        }
+        final ComTopic<VxCard> topic = (ComTopic<VxCard>) Cache.getTinode().getTopic(mTopicName);
+        if (topic == null) {
+            return;
+        }
+        if (holder.mAvatar == null && holder.mUserName == null) {
+            return;
+        }
+
+        final String sender;
+        try {
+            sender = mCursor.moveToPosition(position) ? MessageDb.getSender(mCursor) : null;
+        } catch (SQLiteBlobTooBigException ex) {
+            Log.w(TAG, "Failed to read sender (misconfigured server):", ex);
+            return;
+        }
+        if (sender == null) {
+            return;
+        }
+
+        boolean isMine = Cache.getTinode().isMe(sender);
+
+        if (holder.mAvatar != null) {
+            if (isMine) {
+                String myId = Cache.getTinode().getMyId();
+                MeTopic<VxCard> me = Cache.getTinode().getMeTopic();
+                UiUtils.setAvatar(holder.mAvatar, me != null ? me.getPub() : null, myId, false);
+            } else {
+                Subscription<VxCard, ?> sub = topic.getSubscription(sender);
+                if (sub != null) {
+                    UiUtils.setAvatar(holder.mAvatar, sub.pub, sub.user, false);
+                } else {
+                    holder.mAvatar.setImageResource(R.drawable.ic_person_circle);
+                }
+            }
+        }
+
+        if (holder.mUserName != null) {
+            boolean showName = Topic.isGrpType(mTopicName) && !ComTopic.isChannel(mTopicName) && !isMine;
+            if (!showName) {
+                holder.mUserName.setVisibility(View.GONE);
+                holder.mUserName.setText(null);
+                return;
+            }
+
+            Subscription<VxCard, ?> sub = topic.getSubscription(sender);
+            if (sub != null && sub.pub != null) {
+                holder.mUserName.setVisibility(View.VISIBLE);
+                holder.mUserName.setText(sub.pub.fn);
+            } else {
+                Spannable span = new SpannableString(mActivity.getString(R.string.user_not_found));
+                span.setSpan(new StyleSpan(Typeface.ITALIC), 0, span.length(),
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                holder.mUserName.setVisibility(View.VISIBLE);
+                holder.mUserName.setText(span);
+            }
+        }
+    }
+
+    private void bindDeliveredIcon(@NonNull ViewHolder holder, @NonNull StoredMessage message, @NonNull ComTopic<VxCard> topic) {
+        if (holder.mDeliveredIcon == null) {
+            return;
+        }
+        if ((holder.mViewType & VIEWTYPE_SIDE_RIGHT) == 0) {
+            return;
+        }
+        if (message.status == null) {
+            holder.mDeliveredIcon.setVisibility(View.INVISIBLE);
+            return;
+        }
+
+        // Avoid updating a large number of outgoing message status icons at once (looks like a refresh).
+        // Keep status visible only for the last outgoing message, plus any pending/failed ones.
+        boolean showStatus = message.status.value <= BaseDb.Status.SENDING.value
+                || message.status == BaseDb.Status.FAILED
+                || message.getDbId() == mLastOutgoingMessageId;
+        holder.mDeliveredIcon.setVisibility(showStatus ? View.VISIBLE : View.INVISIBLE);
+        if (!showStatus) {
+            return;
+        }
+
+        UiUtils.setMessageStatusIcon(holder.mDeliveredIcon, message.status.value,
+                topic.msgReadCount(message.seq), topic.msgRecvCount(message.seq));
+    }
+
+    void notifyDeliveryStatusChanged(@Nullable Integer seq) {
+        if (mRecyclerView == null || mCursor == null || mCursor.isClosed()) {
+            return;
+        }
+        LinearLayoutManager lm = (LinearLayoutManager) mRecyclerView.getLayoutManager();
+        if (lm == null) {
+            return;
+        }
+        int first = lm.findFirstVisibleItemPosition();
+        int last = lm.findLastVisibleItemPosition();
+        if (first == RecyclerView.NO_POSITION || last == RecyclerView.NO_POSITION || last < first) {
+            return;
+        }
+        if (mLastOutgoingMessageId == View.NO_ID) {
+            return;
+        }
+        int pos = findItemPositionById(mLastOutgoingMessageId, first, last);
+        if (pos >= 0) {
+            notifyItemChanged(pos, PAYLOAD_DELIVERY);
+        }
+    }
+
+    void notifySenderInfoChanged(@NonNull Collection<String> senderIds) {
+        if (senderIds.isEmpty()) {
+            return;
+        }
+        final HashSet<String> senders = new HashSet<>(senderIds);
+        mActivity.runOnUiThread(() -> {
+            if (mRecyclerView == null || mCursor == null || mCursor.isClosed()) {
+                return;
+            }
+
+            LinearLayoutManager lm = (LinearLayoutManager) mRecyclerView.getLayoutManager();
+            if (lm == null) {
+                return;
+            }
+            int first = lm.findFirstVisibleItemPosition();
+            int last = lm.findLastVisibleItemPosition();
+            if (first == RecyclerView.NO_POSITION || last == RecyclerView.NO_POSITION || last < first) {
+                return;
+            }
+
+            int count = getItemCount();
+            if (count <= 0) {
+                return;
+            }
+
+            first = Math.max(first, 0);
+            last = Math.min(last, count - 1);
+
+            for (int pos = first; pos <= last; pos++) {
+                final String sender;
+                try {
+                    sender = mCursor.moveToPosition(pos) ? MessageDb.getSender(mCursor) : null;
+                } catch (SQLiteBlobTooBigException ex) {
+                    Log.w(TAG, "Failed to read sender (misconfigured server):", ex);
+                    continue;
+                }
+                if (sender != null && senders.contains(sender)) {
+                    notifyItemChanged(pos, PAYLOAD_SENDER);
+                }
+            }
+        });
+    }
+
+    private void resetNewMessageEnterState(@NonNull ViewHolder vh) {
+        if (vh.mMessageBubble == null) {
+            return;
+        }
+        vh.mMessageBubble.animate().cancel();
+        vh.mMessageBubble.setAlpha(1f);
+        vh.mMessageBubble.setTranslationY(0f);
+        vh.mMessageBubble.setScaleX(1f);
+        vh.mMessageBubble.setScaleY(1f);
+    }
+
+    private void animateNewMessageEnter(@NonNull ViewHolder vh) {
+        if (vh.mMessageBubble == null) {
+            return;
+        }
+        float density = vh.itemView.getResources().getDisplayMetrics().density;
+        float translation = NEW_MESSAGE_ENTER_TRANSLATION_DP * density;
+        vh.mMessageBubble.setAlpha(0f);
+        vh.mMessageBubble.setTranslationY(translation);
+        vh.mMessageBubble.setScaleX(NEW_MESSAGE_ENTER_SCALE_FROM);
+        vh.mMessageBubble.setScaleY(NEW_MESSAGE_ENTER_SCALE_FROM);
+        vh.mMessageBubble.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(NEW_MESSAGE_ENTER_ANIMATION_DURATION)
+                .setInterpolator(new DecelerateInterpolator(1.6f))
+                .start();
+    }
+
+    private int distanceFromBottomPx() {
+        if (mRecyclerView == null) {
+            return 0;
+        }
+        return mRecyclerView.computeVerticalScrollRange()
+                - mRecyclerView.computeVerticalScrollExtent()
+                - mRecyclerView.computeVerticalScrollOffset();
+    }
+
+    private void cancelBottomSpring() {
+        if (mBottomSpring != null) {
+            mBottomSpring.cancel();
+            mBottomSpring = null;
+        }
+        mBottomSpringLastValue = 0f;
+    }
+
+    void scrollToBottomWithPhysics() {
+        if (animationsSuppressed()) {
+            scrollToBottomImmediate();
+        } else {
+            springScrollToBottom();
+        }
+    }
+
+    private void scrollToBottomImmediate() {
+        if (mRecyclerView == null) {
+            return;
+        }
+        if (mRecyclerView.isComputingLayout()) {
+            mRecyclerView.post(this::scrollToBottomImmediate);
+            return;
+        }
+
+        int distance = distanceFromBottomPx();
+        if (distance <= 0) {
+            return;
+        }
+
+        cancelBottomSpring();
+        mRecyclerView.scrollBy(0, distance);
+    }
+
+    private void springScrollToBottom() {
+        if (mRecyclerView == null) {
+            return;
+        }
+        if (mRecyclerView.getScrollState() != RecyclerView.SCROLL_STATE_IDLE) {
+            return;
+        }
+        if (mRecyclerView.isComputingLayout()) {
+            mRecyclerView.post(this::springScrollToBottom);
+            return;
+        }
+
+        int distance = distanceFromBottomPx();
+        if (distance <= 0) {
+            return;
+        }
+
+        cancelBottomSpring();
+
+        mBottomSpringLastValue = 0f;
+        FloatValueHolder holder = new FloatValueHolder(0f);
+        SpringForce force = new SpringForce(distance)
+                // Lower stiffness + higher damping gives a heavier, "physical" push.
+                .setStiffness(220f)
+                .setDampingRatio(0.92f);
+        mBottomSpring = new SpringAnimation(holder);
+        mBottomSpring.setSpring(force);
+        mBottomSpring.addUpdateListener((animation, value, velocity) -> {
+            if (mRecyclerView == null) {
+                return;
+            }
+            if (mRecyclerView.getScrollState() != RecyclerView.SCROLL_STATE_IDLE) {
+                animation.cancel();
+                return;
+            }
+            float deltaF = value - mBottomSpringLastValue;
+            int delta = Math.round(deltaF);
+            if (delta != 0) {
+                mRecyclerView.scrollBy(0, delta);
+                mBottomSpringLastValue += delta;
+            }
+        });
+        mBottomSpring.addEndListener((animation, canceled, value, velocity) -> {
+            if (!canceled && mRecyclerView != null && mRecyclerView.getScrollState() == RecyclerView.SCROLL_STATE_IDLE) {
+                int remaining = distanceFromBottomPx();
+                if (remaining > 1) {
+                    mRecyclerView.scrollBy(0, remaining);
+                }
+            }
+            mBottomSpring = null;
+            mBottomSpringLastValue = 0f;
+        });
+        mBottomSpring.start();
     }
 
     // Must match position-to-item of getItemId.
@@ -940,6 +1262,23 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
                     if (MessageDb.getLocalId(mCursor) == itemId) {
                         return i;
                     }
+                }
+            }
+        } catch (SQLiteBlobTooBigException ex) {
+            Log.w(TAG, "Failed to read message (misconfigured server):", ex);
+        }
+        return -1;
+    }
+
+    private static int findItemPositionById(@Nullable Cursor cursor, long itemId) {
+        if (itemId == View.NO_ID || cursor == null || cursor.isClosed()) {
+            return -1;
+        }
+
+        try {
+            for (int i = 0; i < cursor.getCount(); i++) {
+                if (cursor.moveToPosition(i) && MessageDb.getLocalId(cursor) == itemId) {
+                    return i;
                 }
             }
         } catch (SQLiteBlobTooBigException ex) {
@@ -1026,16 +1365,116 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
         }
     }
 
+    private boolean animationsSuppressed() {
+        return SystemClock.uptimeMillis() < mSuppressAnimationsUntil;
+    }
+
     void resetContent(@Nullable final String topicName) {
         if (topicName == null) {
             boolean hard = mTopicName != null;
             mTopicName = null;
+            mAnimateOnBindMessageIds.clear();
+            mMaxMessageId = View.NO_ID;
+            mLastOutgoingMessageId = View.NO_ID;
+            mSuppressAnimationsUntil = 0L;
             swapCursor(null, hard ? REFRESH_HARD : REFRESH_NONE);
         } else {
             boolean hard = !topicName.equals(mTopicName);
             mTopicName = topicName;
+            if (hard) {
+                mAnimateOnBindMessageIds.clear();
+                mMaxMessageId = View.NO_ID;
+                mLastOutgoingMessageId = View.NO_ID;
+                mSuppressAnimationsUntil = SystemClock.uptimeMillis() + ENTRY_ANIMATION_SUPPRESS_MS;
+            }
             runLoader(hard);
         }
+    }
+
+    private static final class CursorSnapshot {
+        final long[] ids;
+        final long[] signatures;
+        final long maxId;
+
+        CursorSnapshot(@NonNull long[] ids, @NonNull long[] signatures, long maxId) {
+            this.ids = ids;
+            this.signatures = signatures;
+            this.maxId = maxId;
+        }
+    }
+
+    private static CursorSnapshot snapshotCursor(@Nullable Cursor cursor) {
+        if (cursor == null || cursor.isClosed()) {
+            return new CursorSnapshot(new long[0], new long[0], View.NO_ID);
+        }
+
+        int count = cursor.getCount();
+        long[] ids = new long[count];
+        long[] sig = new long[count];
+        long maxId = View.NO_ID;
+        for (int i = 0; i < count; i++) {
+            if (!cursor.moveToPosition(i)) {
+                break;
+            }
+            long id = MessageDb.getLocalId(cursor);
+            ids[i] = id;
+            if (id > maxId) {
+                maxId = id;
+            }
+
+            int status = MessageDb.getStatus(cursor);
+            int seq = MessageDb.getEffectiveSeqId(cursor);
+            int high = MessageDb.getHigh(cursor);
+            int delId = MessageDb.getDelId(cursor);
+            sig[i] = ((long) status << 48) ^ ((long) seq << 32) ^ ((long) high << 16) ^ (long) delId;
+        }
+
+        return new CursorSnapshot(ids, sig, maxId);
+    }
+
+    private static final class CursorDiffCallback extends DiffUtil.Callback {
+        private final CursorSnapshot mOld;
+        private final CursorSnapshot mNew;
+
+        CursorDiffCallback(@NonNull CursorSnapshot oldSnapshot, @NonNull CursorSnapshot newSnapshot) {
+            mOld = oldSnapshot;
+            mNew = newSnapshot;
+        }
+
+        @Override
+        public int getOldListSize() {
+            return mOld.ids.length;
+        }
+
+        @Override
+        public int getNewListSize() {
+            return mNew.ids.length;
+        }
+
+        @Override
+        public boolean areItemsTheSame(int oldItemPosition, int newItemPosition) {
+            return mOld.ids[oldItemPosition] == mNew.ids[newItemPosition];
+        }
+
+        @Override
+        public boolean areContentsTheSame(int oldItemPosition, int newItemPosition) {
+            return mOld.signatures[oldItemPosition] == mNew.signatures[newItemPosition];
+        }
+    }
+
+    private static long findLastOutgoingMessageId(@Nullable Cursor cursor) {
+        if (cursor == null || cursor.isClosed()) {
+            return View.NO_ID;
+        }
+        for (int i = cursor.getCount() - 1; i >= 0; i--) {
+            if (!cursor.moveToPosition(i)) {
+                continue;
+            }
+            if (MessageDb.isMine(cursor)) {
+                return MessageDb.getLocalId(cursor);
+            }
+        }
+        return View.NO_ID;
     }
 
     @SuppressLint("NotifyDataSetChanged")
@@ -1047,6 +1486,69 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
         }
 
         Cursor oldCursor = mCursor;
+        int previousCount = 0;
+        long anchorItemId = View.NO_ID;
+        int anchorTop = 0;
+        boolean keepBottomPinned = false;
+        if (refresh != REFRESH_NONE && oldCursor != null && !oldCursor.isClosed()) {
+            previousCount = oldCursor.getCount();
+            LinearLayoutManager lm = (LinearLayoutManager) mRecyclerView.getLayoutManager();
+            if (lm != null) {
+                int lastVisiblePosition = lm.findLastVisibleItemPosition();
+                keepBottomPinned = lastVisiblePosition >= previousCount - 1;
+                if (!keepBottomPinned) {
+                    int firstVisiblePosition = lm.findFirstVisibleItemPosition();
+                    if (firstVisiblePosition != RecyclerView.NO_POSITION &&
+                            oldCursor.moveToPosition(firstVisiblePosition)) {
+                        anchorItemId = MessageDb.getLocalId(oldCursor);
+                        View anchorView = lm.findViewByPosition(firstVisiblePosition);
+                        anchorTop = anchorView != null ? anchorView.getTop() : 0;
+                    }
+                }
+            }
+        }
+
+        CursorSnapshot oldSnapshot = null;
+        CursorSnapshot newSnapshot = null;
+        DiffUtil.DiffResult diffResult = null;
+        boolean springToBottom = false;
+        boolean jumpToBottom = false;
+        long oldLastOutgoingMessageId = mLastOutgoingMessageId;
+        if (refresh == REFRESH_SOFT) {
+            oldSnapshot = snapshotCursor(oldCursor);
+            newSnapshot = snapshotCursor(cursor);
+            diffResult = DiffUtil.calculateDiff(new CursorDiffCallback(oldSnapshot, newSnapshot), false);
+
+            if (keepBottomPinned && mMaxMessageId != View.NO_ID && newSnapshot.maxId > mMaxMessageId) {
+                if (!animationsSuppressed()) {
+                    springToBottom = true;
+                    for (long id : newSnapshot.ids) {
+                        if (id > mMaxMessageId) {
+                            mAnimateOnBindMessageIds.add(id);
+                        }
+                    }
+                } else {
+                    jumpToBottom = true;
+                }
+            }
+            if (newSnapshot.maxId != View.NO_ID) {
+                if (mMaxMessageId == View.NO_ID) {
+                    mMaxMessageId = newSnapshot.maxId;
+                } else {
+                    mMaxMessageId = Math.max(mMaxMessageId, newSnapshot.maxId);
+                }
+            }
+            mLastOutgoingMessageId = findLastOutgoingMessageId(cursor);
+        } else if (refresh == REFRESH_HARD) {
+            newSnapshot = snapshotCursor(cursor);
+            mAnimateOnBindMessageIds.clear();
+            mMaxMessageId = newSnapshot.maxId;
+            mLastOutgoingMessageId = findLastOutgoingMessageId(cursor);
+            oldLastOutgoingMessageId = View.NO_ID;
+        } else {
+            mLastOutgoingMessageId = View.NO_ID;
+        }
+
         mCursor = cursor;
 
         // Close previous cursor if it existed and is different from the new one.
@@ -1055,22 +1557,60 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
         }
 
         if (refresh != REFRESH_NONE) {
+            final int finalPreviousCount = previousCount;
+            final long finalAnchorItemId = anchorItemId;
+            final int finalAnchorTop = anchorTop;
+            final boolean finalKeepBottomPinned = keepBottomPinned;
+            final DiffUtil.DiffResult finalDiffResult = diffResult;
+            final boolean finalSpringToBottom = springToBottom;
+            final boolean finalJumpToBottom = jumpToBottom;
+            final long finalOldLastOutgoingMessageId = oldLastOutgoingMessageId;
+            final long finalNewLastOutgoingMessageId = mLastOutgoingMessageId;
             mActivity.runOnUiThread(() -> {
-                int position = -1;
-                if (cursor != null) {
-                    LinearLayoutManager lm = (LinearLayoutManager) mRecyclerView.getLayoutManager();
-                    if (lm != null) {
-                        position = lm.findFirstVisibleItemPosition();
-                    }
-                }
                 mRefresher.setRefreshing(false);
                 if (refresh == REFRESH_HARD) {
-                    mRecyclerView.setAdapter(MessagesAdapter.this);
+                    if (mRecyclerView.getAdapter() != MessagesAdapter.this) {
+                        mRecyclerView.setAdapter(MessagesAdapter.this);
+                    } else {
+                        notifyDataSetChanged();
+                    }
                 } else {
-                    notifyDataSetChanged();
+                    if (finalDiffResult != null) {
+                        finalDiffResult.dispatchUpdatesTo(MessagesAdapter.this);
+                    } else {
+                        notifyDataSetChanged();
+                    }
                 }
-                if (cursor != null && position == 0) {
-                    mRecyclerView.scrollToPosition(0);
+                if (cursor != null && cursor.getCount() > 0) {
+                    LinearLayoutManager lm = (LinearLayoutManager) mRecyclerView.getLayoutManager();
+                    if (refresh == REFRESH_HARD) {
+                        mRecyclerView.scrollToPosition(cursor.getCount() - 1);
+                    } else if (finalKeepBottomPinned) {
+                        if (finalSpringToBottom) {
+                            mRecyclerView.post(MessagesAdapter.this::springScrollToBottom);
+                        } else if (finalJumpToBottom) {
+                            mRecyclerView.post(MessagesAdapter.this::scrollToBottomImmediate);
+                        }
+                    } else if (lm != null) {
+                        int anchorPosition = findItemPositionById(cursor, finalAnchorItemId);
+                        if (anchorPosition >= 0) {
+                            lm.scrollToPositionWithOffset(anchorPosition, finalAnchorTop);
+                        } else if (finalPreviousCount == 0) {
+                            mRecyclerView.scrollToPosition(cursor.getCount() - 1);
+                        }
+                    }
+                }
+
+                // If the last outgoing message changed, update icons without rebinding entire rows.
+                if (finalOldLastOutgoingMessageId != finalNewLastOutgoingMessageId && cursor != null) {
+                    int oldPos = findItemPositionById(cursor, finalOldLastOutgoingMessageId);
+                    if (oldPos >= 0) {
+                        notifyItemChanged(oldPos, PAYLOAD_DELIVERY);
+                    }
+                    int newPos = findItemPositionById(cursor, finalNewLastOutgoingMessageId);
+                    if (newPos >= 0) {
+                        notifyItemChanged(newPos, PAYLOAD_DELIVERY);
+                    }
                 }
             });
         }
@@ -1114,7 +1654,7 @@ public class MessagesAdapter extends RecyclerView.Adapter<MessagesAdapter.ViewHo
         int count = getItemCount();
         if (count == mPagesToLoad * MESSAGES_TO_LOAD) {
             // Check if there are gaps in the next page.
-            final StoredMessage msg = getMessage(mCursor,count - 1, 0);
+            final StoredMessage msg = getMessage(mCursor, 0, 0);
             final SqlStore store = BaseDb.getInstance().getStore();
             MsgRange[] missing = store.getMissingRanges(topic, msg.seq, MESSAGES_TO_LOAD, false);
             if (missing == null) {

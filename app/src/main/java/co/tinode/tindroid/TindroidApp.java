@@ -46,6 +46,7 @@ import androidx.emoji2.text.FontRequestEmojiCompatConfig;
 import androidx.media3.database.StandaloneDatabaseProvider;
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor;
 import androidx.media3.datasource.cache.SimpleCache;
+import com.google.firebase.FirebaseApp;
 import com.google.firebase.crashlytics.FirebaseCrashlytics;
 
 import java.io.File;
@@ -85,6 +86,7 @@ import okhttp3.Request;
  */
 public class TindroidApp extends Application implements DefaultLifecycleObserver {
     private static final String TAG = "TindroidApp";
+    private static final Set<String> LEGACY_DEFAULT_HOSTS = Set.of("sandbox.tinode.co", "api.tinode.co");
 
     // 256 MB.
     private static final int COIL_CACHE_SIZE = 1024 * 1024 * 256;
@@ -118,18 +120,30 @@ public class TindroidApp extends Application implements DefaultLifecycleObserver
         return sAppVersion;
     }
 
+    public static boolean isFirebaseAvailable() {
+        return sContext != null && !FirebaseApp.getApps(sContext).isEmpty();
+    }
+
     public static int getAppBuild() {
         return sAppBuild;
     }
 
     public static String getDefaultHostName() {
-        return sContext.getResources().getString(isEmulator() ?
-                R.string.emulator_host_name :
-                R.string.default_host_name);
+        return sContext.getResources().getString(R.string.default_host_name);
     }
 
     public static boolean getDefaultTLS() {
-        return !isEmulator();
+        return false;
+    }
+
+    private void migrateLegacyDefaultServerPrefs(SharedPreferences pref) {
+        String hostName = pref.getString(Utils.PREFS_HOST_NAME, null);
+        if (!TextUtils.isEmpty(hostName) && LEGACY_DEFAULT_HOSTS.contains(hostName)) {
+            pref.edit()
+                    .putString(Utils.PREFS_HOST_NAME, getDefaultHostName())
+                    .putBoolean(Utils.PREFS_USE_TLS, getDefaultTLS())
+                    .apply();
+        }
     }
 
     public static void retainCache(Cache cache) {
@@ -137,8 +151,7 @@ public class TindroidApp extends Application implements DefaultLifecycleObserver
     }
 
     // Detect if the code is running in an emulator.
-    // Used mostly for convenience to use correct server address i.e. 10.0.2.2:6060 vs sandbox.tinode.co and
-    // to enable/disable Crashlytics. It's OK if it's imprecise.
+    // Used to adjust emulator-specific behavior such as optional diagnostics. It's OK if it's imprecise.
     public static boolean isEmulator() {
         return Build.FINGERPRINT.startsWith("sdk_gphone_x86")
                 || Build.FINGERPRINT.startsWith("unknown")
@@ -227,8 +240,12 @@ public class TindroidApp extends Application implements DefaultLifecycleObserver
                 R.array.com_google_android_gms_fonts_certs);
         EmojiCompat.init(new FontRequestEmojiCompatConfig(this, fontRequest));
 
-        // Disable Crashlytics for debug builds.
-        FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(!BuildConfig.DEBUG);
+        // Firebase is optional in local builds without google-services.json.
+        if (isFirebaseAvailable()) {
+            FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(!BuildConfig.DEBUG);
+        } else {
+            Log.i(TAG, "Firebase is not configured; Crashlytics disabled");
+        }
 
         BroadcastReceiver br = new BroadcastReceiver() {
             @Override
@@ -255,6 +272,8 @@ public class TindroidApp extends Application implements DefaultLifecycleObserver
             editor.putString(Utils.PREFS_HOST_NAME, getDefaultHostName());
             editor.putBoolean(Utils.PREFS_USE_TLS, getDefaultTLS());
             editor.apply();
+        } else {
+            migrateLegacyDefaultServerPrefs(pref);
         }
 
         // Set UI mode.

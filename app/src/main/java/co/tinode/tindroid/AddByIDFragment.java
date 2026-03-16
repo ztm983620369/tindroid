@@ -24,6 +24,8 @@ import androidx.fragment.app.Fragment;
 import co.tinode.tindroid.widgets.QRCodeScanner;
 
 public class AddByIDFragment extends Fragment {
+    static final String ARG_START_IN_SCAN_MODE = "co.tinode.tindroid.arg.START_IN_SCAN_MODE";
+
     private static final int FRAME_QRCODE = 0;
     private static final int FRAME_CAMERA = 1;
 
@@ -119,6 +121,11 @@ public class AddByIDFragment extends Fragment {
 
             mQrScanner.startCamera(this, mCameraPreview);
         });
+
+        if (savedInstanceState == null && getArguments() != null
+                && getArguments().getBoolean(ARG_START_IN_SCAN_MODE, false)) {
+            scanCodeButton.performClick();
+        }
     }
 
     private void goToTopic(String id) {

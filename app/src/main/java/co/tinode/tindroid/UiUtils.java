@@ -546,7 +546,7 @@ public class UiUtils {
                             Topic.isSlfType(address) ? LetterTileDrawable.ContactType.SELF :
                                     LetterTileDrawable.ContactType.GROUP, disabled)
                     .setLetterAndColor(name, address, disabled)
-                    .setIsCircular(true);
+                    .setIsCircular(false);
             return drawable;
         }
     }

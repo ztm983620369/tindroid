@@ -15,6 +15,7 @@ import androidx.viewpager2.adapter.FragmentStateAdapter;
 import androidx.viewpager2.widget.ViewPager2;
 
 public class StartChatFragment extends Fragment {
+    private static final String STATE_ACTIVE_TAB = "activeTab";
     private static final int COUNT_OF_TABS = 3;
     private static final int TAB_SEARCH = 0;
     private static final int TAB_NEW_GROUP = 1;
@@ -32,34 +33,47 @@ public class StartChatFragment extends Fragment {
     public void onViewCreated(@NonNull View view, Bundle savedInstance) {
         final FragmentActivity activity = requireActivity();
 
-        int initialTab = 0;
-        if (savedInstance != null) {
-            initialTab = savedInstance.getInt("activeTab");
-        }
+        int initialTab = resolveInitialTab(activity, savedInstance);
+        boolean startScan = activity.getIntent().getBooleanExtra(StartChatActivity.EXTRA_BY_ID_START_SCAN, false);
 
         final TabLayout tabLayout = view.findViewById(R.id.tabsCreationOptions);
         final ViewPager2 viewPager = view.findViewById(R.id.tabPager);
-        viewPager.setAdapter(new PagerAdapter(activity));
-        // This has no effect. It looks like an Android bug.
-        viewPager.setCurrentItem(initialTab, false);
+        viewPager.setAdapter(new PagerAdapter(activity, startScan));
         new TabLayoutMediator(tabLayout, viewPager, (tab, position) -> tab.setText(TAB_NAMES[position])).attach();
+        int safeInitialTab = initialTab;
+        viewPager.post(() -> viewPager.setCurrentItem(safeInitialTab, false));
     }
 
     @Override
     public void onSaveInstanceState(@NonNull Bundle outState) {
         super.onSaveInstanceState(outState);
 
-        final FragmentActivity activity = requireActivity();
-
-        final TabLayout tabLayout = activity.findViewById(R.id.tabsCreationOptions);
-        if (tabLayout != null) {
-            outState.putInt("activeTab", tabLayout.getSelectedTabPosition());
+        final View view = getView();
+        if (view == null) {
+            return;
+        }
+        final ViewPager2 viewPager = view.findViewById(R.id.tabPager);
+        if (viewPager != null) {
+            outState.putInt(STATE_ACTIVE_TAB, viewPager.getCurrentItem());
         }
     }
 
+    private int resolveInitialTab(@NonNull FragmentActivity activity, Bundle savedInstance) {
+        int initialTab;
+        if (savedInstance != null) {
+            initialTab = savedInstance.getInt(STATE_ACTIVE_TAB, 0);
+        } else {
+            initialTab = activity.getIntent().getIntExtra(StartChatActivity.EXTRA_INITIAL_TAB, 0);
+        }
+        return (initialTab >= 0 && initialTab < COUNT_OF_TABS) ? initialTab : 0;
+    }
+
     private static class PagerAdapter extends FragmentStateAdapter {
-        PagerAdapter(FragmentActivity fa) {
+        private final boolean mStartByIdScan;
+
+        PagerAdapter(FragmentActivity fa, boolean startByIdScan) {
             super(fa);
+            mStartByIdScan = startByIdScan;
         }
 
         @NonNull
@@ -68,7 +82,15 @@ public class StartChatFragment extends Fragment {
             return switch (position) {
                 case TAB_SEARCH -> new FindFragment();
                 case TAB_NEW_GROUP -> new CreateGroupFragment();
-                case TAB_BY_ID -> new AddByIDFragment();
+                case TAB_BY_ID -> {
+                    AddByIDFragment fragment = new AddByIDFragment();
+                    if (mStartByIdScan) {
+                        Bundle args = new Bundle();
+                        args.putBoolean(AddByIDFragment.ARG_START_IN_SCAN_MODE, true);
+                        fragment.setArguments(args);
+                    }
+                    yield fragment;
+                }
                 default -> throw new IllegalArgumentException("Invalid TAB position " + position);
             };
         }

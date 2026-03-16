@@ -9,19 +9,24 @@ import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.drawable.BitmapDrawable;
 
+import co.tinode.tindroid.R;
+
 /**
- * Helper class to make avatars round.
+ * Helper class to render avatars as app-wide rounded rectangles.
  */
 public class RoundImageDrawable extends BitmapDrawable {
     private static final Matrix sMatrix = new Matrix();
 
     private final Paint mPaint = new Paint();
+    private final RectF mDrawRect = new RectF();
 
     private final Bitmap mBitmap;
     private final Rect mBitmapRect;
+    private final float mCornerRadius;
 
     public RoundImageDrawable(Resources res, Bitmap bmp) {
         super(res, bmp);
@@ -34,6 +39,7 @@ public class RoundImageDrawable extends BitmapDrawable {
 
         mBitmap = bmp;
         mBitmapRect = new Rect(0, 0, bmp.getWidth(), bmp.getHeight());
+        mCornerRadius = res.getDimension(R.dimen.avatar_corner_radius);
     }
 
     @Override
@@ -53,7 +59,9 @@ public class RoundImageDrawable extends BitmapDrawable {
         sMatrix.postTranslate(dst.left, dst.top);
         shader.setLocalMatrix(sMatrix);
         mPaint.setShader(shader);
-        canvas.drawCircle(dst.centerX(), dst.centerY(), dst.width() * 0.5f, mPaint);
+        mDrawRect.set(dst);
+        float radius = Math.min(mCornerRadius, Math.min(dst.width(), dst.height()) * 0.5f);
+        canvas.drawRoundRect(mDrawRect, radius, radius, mPaint);
     }
 
     @Override

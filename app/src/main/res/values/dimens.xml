@@ -31,4 +31,12 @@
     <dimen name="dialog_padding_vertical">4dp</dimen>
     <dimen name="fab_low_elevation">2dp</dimen>
     <dimen name="connecting_dot">2dp</dimen>
+    <dimen name="chat_bubble_corner_radius">3dp</dimen>
+    <dimen name="chat_bubble_padding_horizontal">10dp</dimen>
+    <dimen name="chat_bubble_padding_vertical">7dp</dimen>
+    <dimen name="chat_bubble_tip_space">16dp</dimen>
+    <dimen name="chat_bubble_margin_edge">8dp</dimen>
+    <dimen name="chat_bubble_elevation">2dp</dimen>
+    <dimen name="message_avatar_size">36dp</dimen>
+    <dimen name="avatar_corner_radius">6dp</dimen>
 </resources>

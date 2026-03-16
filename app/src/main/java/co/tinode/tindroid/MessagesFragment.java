@@ -9,6 +9,7 @@ import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.media.AudioAttributes;
@@ -40,6 +41,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -52,9 +54,12 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.PickVisualMediaRequest;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -68,9 +73,14 @@ import androidx.core.view.ContentInfoCompat;
 import androidx.core.view.MenuProvider;
 import androidx.core.view.OnReceiveContentListener;
 import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsAnimationCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.Lifecycle;
 import androidx.preference.PreferenceManager;
+import androidx.recyclerview.widget.DefaultItemAnimator;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
@@ -112,8 +122,8 @@ import co.tinode.tinodesdk.model.Subscription;
  */
 public class MessagesFragment extends Fragment implements MenuProvider {
     private static final String TAG = "MessageFragment";
-
     private static final String[] SUPPORTED_MIME_TYPES = new String[]{"image/*"};
+    private static final int AUTO_SCROLL_BOTTOM_THRESHOLD = 3;
 
     static final String MESSAGE_TO_SEND = "messageText";
     static final String MESSAGE_TEXT_ACTION = "messageTextAction";
@@ -136,10 +146,12 @@ public class MessagesFragment extends Fragment implements MenuProvider {
     private RecyclerView mRecyclerView;
     private MessagesAdapter mMessagesAdapter;
     private SwipeRefreshLayout mRefresher;
+    private ComposerFacade mComposer;
 
     private int mSelectedPin = -1;
     private PinnedAdapter mPinnedAdapter = null;
     private ViewPager2 mPinnedViewPager = null;
+    private int mPinnedHash = 0;
 
     private FloatingActionButton mGoToLatest;
 
@@ -149,11 +161,16 @@ public class MessagesFragment extends Fragment implements MenuProvider {
 
     private boolean mSendOnEnter = false;
 
-    private UiUtils.MsgAction mTextAction = UiUtils.MsgAction.NONE;
-    private int mQuotedSeqID = -1;
-    private Drafty mQuote = null;
-    private Drafty mContentToForward = null;
-    private Drafty mForwardSender = null;
+    private boolean mStickToBottom = true;
+    private boolean mAutoScrolling = false;
+    private boolean mImeAnimating = false;
+    private boolean mImeStickToBottom = false;
+    private boolean mImeForceStickToBottom = false;
+    private int mImeLastBottom = 0;
+    private View mImeInsetsTarget = null;
+    private boolean mDismissImeOnScroll = false;
+    private boolean mImePreserveOnHide = false;
+    private boolean mInitialLoaderStarted = false;
 
     private MediaRecorder mAudioRecorder = null;
     private File mAudioRecord = null;
@@ -171,8 +188,6 @@ public class MessagesFragment extends Fragment implements MenuProvider {
     private AudioSampler mAudioSampler = null;
 
     private final Handler mAudioSamplingHandler = new Handler(Looper.getMainLooper());
-
-    private int mVisibleSendPanel = R.id.sendMessagePanel;
 
     private PromisedReply.FailureListener<ServerMessage> mFailureListener;
 
@@ -307,6 +322,17 @@ public class MessagesFragment extends Fragment implements MenuProvider {
 
         activity.addMenuProvider(this, getViewLifecycleOwner(),
                 Lifecycle.State.RESUMED);
+        activity.getOnBackPressedDispatcher().addCallback(getViewLifecycleOwner(), new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                if (handleComposerBackPressed()) {
+                    return;
+                }
+                setEnabled(false);
+                activity.getOnBackPressedDispatcher().onBackPressed();
+                setEnabled(true);
+            }
+        });
 
         SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(activity);
         mSendOnEnter = pref.getBoolean(Utils.PREFS_SEND_ON_ENTER, false);
@@ -341,31 +367,65 @@ public class MessagesFragment extends Fragment implements MenuProvider {
                 }
             }
         };
-        mMessageViewLayoutManager.setReverseLayout(true);
+        mMessageViewLayoutManager.setReverseLayout(false);
+        // Keep natural top-to-bottom growth like WeChat. Latest messages are shown
+        // by explicit scroll logic instead of bottom-aligning short conversations.
+        mMessageViewLayoutManager.setStackFromEnd(false);
 
         mRecyclerView = view.findViewById(R.id.messages_container);
         mRecyclerView.setLayoutManager(mMessageViewLayoutManager);
         mRecyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
+                if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
+                    mDismissImeOnScroll = true;
+                } else {
+                    mDismissImeOnScroll = false;
+                }
+                if (newState == RecyclerView.SCROLL_STATE_IDLE) {
+                    mStickToBottom = isNearBottom();
+                }
                 RecyclerView.Adapter adapter = mRecyclerView.getAdapter();
                 if (adapter == null) {
                     return;
                 }
-                int itemCount = adapter.getItemCount();
-                int pos = mMessageViewLayoutManager.findLastVisibleItemPosition();
-                if (itemCount - pos < 4) {
+                int pos = mMessageViewLayoutManager.findFirstVisibleItemPosition();
+                if (pos >= 0 && pos < 4) {
                     ((MessagesAdapter) adapter).loadPreviousPage();
                 }
             }
 
             @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
-                int pos = mMessageViewLayoutManager.findFirstVisibleItemPosition();
-                if (dy > 5 && pos > 2) {
-                    mGoToLatest.show();
-                } else if (dy < -5 || pos == 0) {
+                RecyclerView.Adapter adapter = recyclerView.getAdapter();
+                if (adapter == null) {
+                    return;
+                }
+                boolean dragging = recyclerView.getScrollState() == RecyclerView.SCROLL_STATE_DRAGGING;
+                if (dragging && dy < 0) {
+                    // As soon as user scrolls up, consider it an intent to view history.
+                    // Do not keep "sticky bottom" behavior even if still within the near-bottom threshold.
+                    mStickToBottom = false;
+                }
+
+                if (dragging && mDismissImeOnScroll && dy < 0) {
+                    EditText editor = activity.findViewById(R.id.editMessage);
+                    boolean editorFocused = editor != null && editor.hasFocus();
+                    if (isImeVisible() || editorFocused) {
+                        mDismissImeOnScroll = false;
+                        dismissImeFromScroll(activity);
+                    }
+                }
+                boolean nearBottom = isNearBottom();
+                if (nearBottom) {
                     mGoToLatest.hide();
+                } else {
+                    mGoToLatest.show();
+                }
+                if (!mAutoScrolling && recyclerView.getScrollState() == RecyclerView.SCROLL_STATE_DRAGGING) {
+                    if (dy > 0) {
+                        mStickToBottom = nearBottom;
+                    }
                 }
             }
         });
@@ -373,6 +433,42 @@ public class MessagesFragment extends Fragment implements MenuProvider {
         mRefresher = view.findViewById(R.id.swipe_refresher);
         mMessagesAdapter = new MessagesAdapter(activity, mRefresher);
         mRecyclerView.setAdapter(mMessagesAdapter);
+        // Avoid visible "refresh" animations when loader updates the cursor via DiffUtil.
+        // Message rows already have their own purposeful enter animations.
+        mRecyclerView.setItemAnimator(null);
+        mRecyclerView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            logComposerState("messagesRecycler layout oldBottom=" + oldBottom + " newBottom=" + bottom, v);
+            if (mImeAnimating) {
+                return;
+            }
+            if (!mStickToBottom || mAutoScrolling) {
+                return;
+            }
+            int oldHeight = oldBottom - oldTop;
+            int newHeight = bottom - top;
+            if (oldHeight <= 0 || newHeight <= 0 || oldHeight == newHeight) {
+                return;
+            }
+            if (newHeight < oldHeight) {
+                int delta = oldHeight - newHeight;
+                if (delta <= 0) {
+                    return;
+                }
+                mAutoScrolling = true;
+                if (!mRecyclerView.isComputingLayout()) {
+                    mRecyclerView.scrollBy(0, delta);
+                    mAutoScrolling = false;
+                } else {
+                    mRecyclerView.post(() -> {
+                        if (mRecyclerView != null) {
+                            mRecyclerView.scrollBy(0, delta);
+                        }
+                        mAutoScrolling = false;
+                    });
+                }
+            }
+        });
+        installImeAwareBottomAnchoring(activity);
         mRefresher.setOnRefreshListener(() -> {
             MsgGetMeta query = mMessagesAdapter.loadPreviousPage();
             if (query != null) {
@@ -408,8 +504,19 @@ public class MessagesFragment extends Fragment implements MenuProvider {
 
         AppCompatImageButton send = view.findViewById(R.id.chatSendButton);
         send.setOnClickListener(v -> sendText(activity));
-        view.findViewById(R.id.chatForwardButton).setOnClickListener(v -> sendText(activity));
         AppCompatImageButton doneEditing = view.findViewById(R.id.chatEditDoneButton);
+        view.findViewById(R.id.chatForwardButton).setOnClickListener(v -> sendText(activity));
+        View trayHost = view.findViewById(R.id.composerTrayHost);
+        EditText editor = view.findViewById(R.id.editMessage);
+        ViewGroup contentContainer = activity.findViewById(R.id.contentFragment);
+        if (contentContainer != null) {
+            mComposer = new ComposerFacade(activity, contentContainer, trayHost, editor, audio, send, doneEditing);
+        }
+        view.findViewById(R.id.composerMoreButton).setOnClickListener(v -> {
+            if (mComposer != null) {
+                mComposer.dispatch(ComposerEvent.moreClicked(v));
+            }
+        });
         doneEditing.setOnClickListener(v -> sendText(activity));
 
         // The [X] unpin button.
@@ -436,17 +543,41 @@ public class MessagesFragment extends Fragment implements MenuProvider {
             }
         });
 
-        // Send image button
-        view.findViewById(R.id.attachImage).setOnClickListener(v -> openMediaSelector(activity));
-
-        // Send file button
-        view.findViewById(R.id.attachFile).setOnClickListener(v -> openFileSelector(activity, true));
+        setupAttachTray(view, activity);
 
         // Cancel reply preview button.
         view.findViewById(R.id.cancelPreview).setOnClickListener(v -> cancelPreview(activity));
         view.findViewById(R.id.cancelForwardingPreview).setOnClickListener(v -> cancelPreview(activity));
 
-        EditText editor = view.findViewById(R.id.editMessage);
+        editor.setOnTouchListener((v, event) -> {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                if (mComposer != null) {
+                    mComposer.dispatch(ComposerEvent.editorTouchDown(v));
+                }
+            }
+            return false;
+        });
+        editor.setOnClickListener(v -> {
+            if (mComposer != null) {
+                mComposer.dispatch(ComposerEvent.editorClicked(v));
+            }
+        });
+        editor.setOnFocusChangeListener((v, hasFocus) -> {
+            if (mComposer != null) {
+                mComposer.dispatch(ComposerEvent.editorFocusChanged(hasFocus, v));
+            }
+            if (hasFocus && !mStickToBottom) {
+                // WeChat-like behavior: focusing the editor brings the conversation back to bottom
+                // with a smooth, physical animation rather than an abrupt jump.
+                mStickToBottom = true;
+                mImeForceStickToBottom = !isImeVisible();
+                if (mMessagesAdapter != null) {
+                    mMessagesAdapter.scrollToBottomWithPhysics();
+                } else {
+                    scrollToBottom(true);
+                }
+            }
+        });
         ViewCompat.setOnReceiveContentListener(editor, SUPPORTED_MIME_TYPES, new StickerReceiver());
 
         // Send notification on key presses
@@ -470,18 +601,8 @@ public class MessagesFragment extends Fragment implements MenuProvider {
                 }
 
                 // Show either [send] or [record audio] or [done editing] button.
-                if (mTextAction == UiUtils.MsgAction.EDIT) {
-                    doneEditing.setVisibility(View.VISIBLE);
-                    audio.setVisibility(View.INVISIBLE);
-                    send.setVisibility(View.INVISIBLE);
-                } else if (charSequence.length() > 0) {
-                    doneEditing.setVisibility(View.INVISIBLE);
-                    audio.setVisibility(View.INVISIBLE);
-                    send.setVisibility(View.VISIBLE);
-                } else {
-                    doneEditing.setVisibility(View.INVISIBLE);
-                    audio.setVisibility(View.VISIBLE);
-                    send.setVisibility(View.INVISIBLE);
+                if (mComposer != null) {
+                    mComposer.dispatch(ComposerEvent.textChanged(charSequence));
                 }
             }
 
@@ -576,6 +697,10 @@ public class MessagesFragment extends Fragment implements MenuProvider {
                         }
                     }
                 });
+
+        // Start loading messages as early as possible to avoid a visible "refresh" at the end
+        // of the enter animation.
+        maybeStartInitialLoader(activity);
     }
 
     @Override
@@ -585,22 +710,16 @@ public class MessagesFragment extends Fragment implements MenuProvider {
 
         final MessageActivity activity = (MessageActivity) requireActivity();
 
-        Bundle args = getArguments();
-        if (args != null) {
-            mTopicName = args.getString(Const.INTENT_EXTRA_TOPIC);
-        }
-
-        if (mTopicName != null) {
-            mTopicName = Tinode.parseTinodeUrl(mTopicName);
-            mTopic = (ComTopic<VxCard>) Cache.getTinode().getTopic(mTopicName);
-            runMessagesLoader(mTopicName);
-        } else {
-            mTopic = null;
-        }
+        maybeStartInitialLoader(activity);
 
         mRefresher.setRefreshing(false);
 
         updateFormValues();
+        if (mComposer != null) {
+            mComposer.dispatch(ComposerEvent.onResume());
+        }
+        EditText editor = activity.findViewById(R.id.editMessage);
+        logComposerState("onResume after updateFormValues", editor);
         activity.sendNoteRead(0);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -609,6 +728,24 @@ public class MessagesFragment extends Fragment implements MenuProvider {
                 mNotificationsPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS);
             }
         }
+    }
+
+    private void maybeStartInitialLoader(@NonNull MessageActivity activity) {
+        if (mInitialLoaderStarted) {
+            return;
+        }
+        Bundle args = getArguments();
+        String topicName = args != null ? args.getString(Const.INTENT_EXTRA_TOPIC) : null;
+        if (topicName == null) {
+            mTopic = null;
+            return;
+        }
+
+        mTopicName = Tinode.parseTinodeUrl(topicName);
+        //noinspection unchecked
+        mTopic = (ComTopic<VxCard>) Cache.getTinode().getTopic(mTopicName);
+        runMessagesLoader(mTopicName);
+        mInitialLoaderStarted = true;
     }
 
     void runMessagesLoader(String topicName) {
@@ -626,6 +763,7 @@ public class MessagesFragment extends Fragment implements MenuProvider {
 
         requireActivity().runOnUiThread(() -> {
             setupPinnedMessages();
+            mPinnedHash = mTopic != null ? mTopic.getPinnedHash() : 0;
 
             mMessagesAdapter.updateSelectedOnPinnedChange(seq);
             int count = mTopic.pinnedCount();
@@ -643,16 +781,6 @@ public class MessagesFragment extends Fragment implements MenuProvider {
             }
             mPinnedAdapter.notifyDataSetChanged();
         });
-    }
-
-
-    private void setSendPanelVisible(Activity activity, int id) {
-        if (mVisibleSendPanel == id) {
-            return;
-        }
-        activity.findViewById(id).setVisibility(View.VISIBLE);
-        activity.findViewById(mVisibleSendPanel).setVisibility(View.GONE);
-        mVisibleSendPanel = id;
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -695,10 +823,10 @@ public class MessagesFragment extends Fragment implements MenuProvider {
                 if (mAudioRecorder != null) {
                     int x = mAudioRecorder.getMaxAmplitude();
                     mAudioSampler.put(x);
-                    if (mVisibleSendPanel == R.id.recordAudioPanel) {
+                    if (mComposer != null && mComposer.isRecordPanelVisible()) {
                         ((WaveDrawable) wave.getBackground()).put(x);
                         timerView.setText(UtilsString.millisToTime((int) (SystemClock.uptimeMillis() - mRecordingStarted)));
-                    } else if (mVisibleSendPanel == R.id.recordAudioShortPanel) {
+                    } else if (mComposer != null && mComposer.isRecordShortPanelVisible()) {
                         ((WaveDrawable) waveShort.getBackground()).put(x);
                         timerShortView.setText(UtilsString.millisToTime((int) (SystemClock.uptimeMillis() - mRecordingStarted)));
                     }
@@ -736,7 +864,9 @@ public class MessagesFragment extends Fragment implements MenuProvider {
                 lockFab.setVisibility(View.GONE);
                 deleteFab.setVisibility(View.GONE);
                 audio.setVisibility(View.VISIBLE);
-                setSendPanelVisible(activity, R.id.sendMessagePanel);
+                if (mComposer != null) {
+                    mComposer.dispatch(ComposerEvent.audioRecordingReadyToSend());
+                }
                 return true;
             }
 
@@ -754,12 +884,16 @@ public class MessagesFragment extends Fragment implements MenuProvider {
                     if (mAudioRecorder != null) {
                         releaseAudio(false);
                     }
-                    setSendPanelVisible(activity, R.id.sendMessagePanel);
+                    if (mComposer != null) {
+                        mComposer.dispatch(ComposerEvent.audioRecordingCancelled());
+                    }
                     releaseAudio(false);
                 } else {
                     playButton.setVisibility(View.GONE);
                     stopButton.setVisibility(View.VISIBLE);
-                    setSendPanelVisible(activity, R.id.recordAudioPanel);
+                    if (mComposer != null) {
+                        mComposer.dispatch(ComposerEvent.audioRecordingLocked());
+                    }
                 }
                 return true;
             }
@@ -791,7 +925,9 @@ public class MessagesFragment extends Fragment implements MenuProvider {
                 deleteFab.setVisibility(View.VISIBLE);
                 audio.setVisibility(View.INVISIBLE);
                 mab.requestFocus();
-                setSendPanelVisible(activity, R.id.recordAudioShortPanel);
+                if (mComposer != null) {
+                    mComposer.dispatch(ComposerEvent.audioRecordingStarted());
+                }
                 // Cancel zone on the left.
                 int x = mab.getLeft();
                 int y = mab.getTop();
@@ -828,7 +964,9 @@ public class MessagesFragment extends Fragment implements MenuProvider {
             WaveDrawable wd = (WaveDrawable) wave.getBackground();
             wd.release();
             releaseAudio(false);
-            setSendPanelVisible(activity, R.id.sendMessagePanel);
+            if (mComposer != null) {
+                mComposer.dispatch(ComposerEvent.audioRecordingCancelled());
+            }
         });
         playButton.setOnClickListener(v -> {
             pauseButton.setVisibility(View.VISIBLE);
@@ -858,7 +996,9 @@ public class MessagesFragment extends Fragment implements MenuProvider {
         view.findViewById(R.id.chatSendAudio).setOnClickListener(v -> {
             releaseAudio(true);
             sendAudio(activity);
-            setSendPanelVisible(activity, R.id.sendMessagePanel);
+            if (mComposer != null) {
+                mComposer.dispatch(ComposerEvent.audioRecordingReadyToSend());
+            }
         });
 
         return audio;
@@ -880,13 +1020,17 @@ public class MessagesFragment extends Fragment implements MenuProvider {
         if (activity.isFinishing() || activity.isDestroyed()) {
             return;
         }
+        logComposerState("updateFormValues start", activity.findViewById(android.R.id.content));
 
         if (mTopic == null) {
             // Default view when the topic is not available.
             activity.findViewById(R.id.notReadable).setVisibility(View.VISIBLE);
             activity.findViewById(R.id.notReadableNote).setVisibility(View.VISIBLE);
-            setSendPanelVisible(activity, R.id.sendMessageDisabled);
+            if (mComposer != null) {
+                mComposer.dispatch(ComposerEvent.topicStateChanged(false, false, false));
+            }
             UiUtils.setupToolbar(activity, null, mTopicName, false, null, false, 0);
+            logComposerState("updateFormValues topicNull", activity.findViewById(R.id.sendMessageDisabled));
             return;
         }
 
@@ -899,10 +1043,15 @@ public class MessagesFragment extends Fragment implements MenuProvider {
         }
 
         int[] pinned = mTopic.getPinned();
-        if (pinned == null) {
+        if (pinned == null || pinned.length == 0) {
             activity.findViewById(R.id.pinned_messages).setVisibility(View.GONE);
+            mPinnedHash = 0;
         } else {
-            setupPinnedMessages();
+            int currentPinnedHash = mTopic.getPinnedHash();
+            if (mPinnedViewPager != null && (mPinnedAdapter == null || mPinnedHash != currentPinnedHash)) {
+                setupPinnedMessages();
+                mPinnedHash = currentPinnedHash;
+            }
 
             ((ImageView) activity.findViewById(R.id.dotSelector))
                     .setImageDrawable(new DotSelectorDrawable(getResources(), pinned.length, 0));
@@ -920,40 +1069,223 @@ public class MessagesFragment extends Fragment implements MenuProvider {
                     acs.isReader(Acs.Side.GIVEN) ? View.GONE : View.VISIBLE);
         }
 
-        if (!mTopic.isWriter() || mTopic.isBlocked() || mTopic.isDeleted()) {
-            setSendPanelVisible(activity, R.id.sendMessageDisabled);
-        } else if (mContentToForward != null) {
-            showContentToForward(activity, mForwardSender, mContentToForward);
-        } else {
+        boolean canWrite = mTopic.isWriter() && !mTopic.isBlocked() && !mTopic.isDeleted();
+        boolean peerDisabled = false;
+        if (canWrite) {
             Subscription peer = mTopic.getPeer();
             boolean isJoiner = peer != null && peer.acs != null && peer.acs.isJoiner(Acs.Side.WANT);
             AcsHelper missing = peer != null && peer.acs != null ? peer.acs.getMissing() : new AcsHelper();
-            if (isJoiner && (missing.isReader() || missing.isWriter())) {
-                setSendPanelVisible(activity, R.id.peersMessagingDisabled);
-            } else {
-                if (!TextUtils.isEmpty(mMessageToSend)) {
-                    EditText input = activity.findViewById(R.id.editMessage);
-                    if (input.getText().length() == 0) {
-                        input.append(mMessageToSend);
-                    }
+            peerDisabled = isJoiner && (missing.isReader() || missing.isWriter());
+        }
 
-                    mMessageToSend = null;
-                }
-                setSendPanelVisible(activity, R.id.sendMessagePanel);
+        if (mComposer != null) {
+            EditText input = activity.findViewById(R.id.editMessage);
+            boolean consumedDraft = mComposer.applyTopicPresentation(canWrite, peerDisabled, mMessageToSend, input);
+            if (consumedDraft) {
+                mMessageToSend = null;
             }
         }
 
         if (acs.isJoiner(Acs.Side.GIVEN) && acs.getExcessive().toString().contains("RW")) {
             showChatInvitationDialog();
         }
+        logComposerState("updateFormValues end", activity.findViewById(android.R.id.content));
     }
 
     private void scrollToBottom(boolean smooth) {
-        if (smooth) {
-            mRecyclerView.smoothScrollToPosition(0);
-        } else {
-            mRecyclerView.scrollToPosition(0);
+        RecyclerView.Adapter adapter = mRecyclerView.getAdapter();
+        if (adapter == null || adapter.getItemCount() == 0) {
+            return;
         }
+        int bottom = adapter.getItemCount() - 1;
+        mStickToBottom = true;
+        if (smooth) {
+            mRecyclerView.smoothScrollToPosition(bottom);
+        } else {
+            mRecyclerView.scrollToPosition(bottom);
+        }
+    }
+
+    private boolean isNearBottom() {
+        if (mRecyclerView == null) {
+            return true;
+        }
+        if (!mRecyclerView.canScrollVertically(1)) {
+            return true;
+        }
+        RecyclerView.Adapter adapter = mRecyclerView.getAdapter();
+        if (adapter == null) {
+            return true;
+        }
+        int count = adapter.getItemCount();
+        if (count == 0) {
+            return true;
+        }
+        int lastPos = mMessageViewLayoutManager != null ? mMessageViewLayoutManager.findLastVisibleItemPosition() : -1;
+        return lastPos >= count - 1 - AUTO_SCROLL_BOTTOM_THRESHOLD;
+    }
+
+    private int distanceFromBottomPx() {
+        if (mRecyclerView == null) {
+            return 0;
+        }
+        return mRecyclerView.computeVerticalScrollRange()
+                - mRecyclerView.computeVerticalScrollExtent()
+                - mRecyclerView.computeVerticalScrollOffset();
+    }
+
+    private boolean isImeVisible() {
+        if (mRecyclerView == null) {
+            return false;
+        }
+        WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(mRecyclerView);
+        if (insets == null) {
+            return false;
+        }
+        return insets.isVisible(WindowInsetsCompat.Type.ime())
+                && insets.getInsets(WindowInsetsCompat.Type.ime()).bottom > 0;
+    }
+
+    private void dismissImeFromScroll(@NonNull MessageActivity activity) {
+        // Only enable preserve behavior when software IME is actually visible to avoid
+        // carrying the flag into unrelated insets animations (e.g. hardware keyboard).
+        mImePreserveOnHide = isImeVisible();
+        EditText editor = activity.findViewById(R.id.editMessage);
+        if (editor != null) {
+            editor.clearFocus();
+        }
+        View anchor = activity.getCurrentFocus();
+        if (anchor == null) {
+            anchor = editor != null ? editor : mRecyclerView;
+        }
+        if (anchor == null) {
+            return;
+        }
+
+        if (mComposer != null) {
+            mComposer.dispatch(ComposerEvent.hideTray("scroll/hideIme", anchor));
+        }
+
+        WindowInsetsControllerCompat controller =
+                WindowCompat.getInsetsController(activity.getWindow(), anchor);
+        if (controller != null) {
+            controller.hide(WindowInsetsCompat.Type.ime());
+        }
+
+        InputMethodManager imm = (InputMethodManager) activity.getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            imm.hideSoftInputFromWindow(anchor.getWindowToken(), 0);
+        }
+    }
+
+    private void installImeAwareBottomAnchoring(@NonNull MessageActivity activity) {
+        if (mRecyclerView == null) {
+            return;
+        }
+        View target = activity.findViewById(android.R.id.content);
+        if (target == null) {
+            return;
+        }
+        mImeInsetsTarget = target;
+        ViewCompat.setWindowInsetsAnimationCallback(target,
+                new WindowInsetsAnimationCompat.Callback(WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
+                    @Override
+                    public void onPrepare(@NonNull WindowInsetsAnimationCompat animation) {
+                        if ((animation.getTypeMask() & WindowInsetsCompat.Type.ime()) == 0) {
+                            return;
+                        }
+                        mImeAnimating = true;
+                        mImeStickToBottom = mStickToBottom && isNearBottom();
+                        mStickToBottom = mImeStickToBottom;
+                        WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(mRecyclerView);
+                        mImeLastBottom = insets != null ? insets.getInsets(WindowInsetsCompat.Type.ime()).bottom : 0;
+                    }
+
+                    @NonNull
+                    @Override
+                    public WindowInsetsCompat onProgress(@NonNull WindowInsetsCompat insets,
+                                                         @NonNull List<WindowInsetsAnimationCompat> runningAnimations) {
+                        if (mRecyclerView == null || !mImeAnimating) {
+                            return insets;
+                        }
+                        int imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom;
+                        int delta = imeBottom - mImeLastBottom;
+                        if (delta == 0) {
+                            return insets;
+                        }
+                        mImeLastBottom = imeBottom;
+                        if (mImePreserveOnHide && delta < 0 && !mAutoScrolling) {
+                            // Keyboard is being dismissed due to user's upward scroll gesture.
+                            // Keep the scroll position stable as the viewport grows, so the list does not
+                            // "snap" back to bottom unless user actually scrolls back.
+                            mAutoScrolling = true;
+                            if (!mRecyclerView.isComputingLayout()) {
+                                mRecyclerView.scrollBy(0, delta);
+                                mAutoScrolling = false;
+                            } else {
+                                final int scrollBy = delta;
+                                mRecyclerView.post(() -> {
+                                    if (mRecyclerView != null) {
+                                        mRecyclerView.scrollBy(0, scrollBy);
+                                    }
+                                    mAutoScrolling = false;
+                                });
+                                return insets;
+                            }
+                            return insets;
+                        }
+                        if (mImeStickToBottom && !mAutoScrolling) {
+                            // When IME is being dismissed (delta < 0), RecyclerView often clamps the scroll
+                            // position automatically as the viewport grows. Applying the same negative delta
+                            // here can double-compensate and "push" the conversation up (latest messages
+                            // scroll out of view). Only compensate on dismiss if we're actually beyond bottom.
+                            int computedScrollBy;
+                            if (delta < 0) {
+                                int distanceFromBottom = distanceFromBottomPx();
+                                if (distanceFromBottom >= 0) {
+                                    return insets;
+                                }
+                                computedScrollBy = distanceFromBottom;
+                            } else {
+                                computedScrollBy = delta;
+                            }
+                            if (computedScrollBy == 0) {
+                                return insets;
+                            }
+                            final int scrollBy = computedScrollBy;
+                            mAutoScrolling = true;
+                            if (!mRecyclerView.isComputingLayout()) {
+                                mRecyclerView.scrollBy(0, scrollBy);
+                                mAutoScrolling = false;
+                            } else {
+                                mRecyclerView.post(() -> {
+                                    if (mRecyclerView != null) {
+                                        mRecyclerView.scrollBy(0, scrollBy);
+                                    }
+                                    mAutoScrolling = false;
+                                });
+                                return insets;
+                            }
+                        }
+                        return insets;
+                    }
+
+                    @Override
+                    public void onEnd(@NonNull WindowInsetsAnimationCompat animation) {
+                        if ((animation.getTypeMask() & WindowInsetsCompat.Type.ime()) == 0) {
+                            return;
+                        }
+                        if (mRecyclerView == null) {
+                            return;
+                        }
+                        WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(mRecyclerView);
+                        mImeLastBottom = insets != null ? insets.getInsets(WindowInsetsCompat.Type.ime()).bottom : 0;
+                        mImeAnimating = false;
+                        mImeStickToBottom = false;
+                        mStickToBottom = mStickToBottom && isNearBottom();
+                        mImePreserveOnHide = false;
+                    }
+                });
     }
 
     @SuppressLint("UnsafeOptInUsageError")
@@ -975,12 +1307,28 @@ public class MessagesFragment extends Fragment implements MenuProvider {
             // Save the text in the send field.
             String draft = ((EditText) activity.findViewById(R.id.editMessage)).getText().toString().trim();
             args.putString(MESSAGE_TO_SEND, draft);
-            args.putString(MESSAGE_TEXT_ACTION, mTextAction.name());
-            args.putInt(MESSAGE_QUOTED_SEQ_ID, mQuotedSeqID);
-            args.putSerializable(MESSAGE_QUOTED, mQuote);
-            args.putSerializable(ForwardToFragment.CONTENT_TO_FORWARD, mContentToForward);
-            args.putSerializable(ForwardToFragment.FORWARDING_FROM_USER, mForwardSender);
+            if (mComposer != null) {
+                mComposer.saveStateToArgs(
+                        args,
+                        MESSAGE_TEXT_ACTION,
+                        MESSAGE_QUOTED_SEQ_ID,
+                        MESSAGE_QUOTED,
+                        ForwardToFragment.CONTENT_TO_FORWARD,
+                        ForwardToFragment.FORWARDING_FROM_USER
+                );
+            }
         }
+    }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        if (mImeInsetsTarget != null) {
+            ViewCompat.setWindowInsetsAnimationCallback(mImeInsetsTarget, null);
+            mImeInsetsTarget = null;
+        }
+        mImeAnimating = false;
+        mImeStickToBottom = false;
     }
 
     @Override
@@ -1301,6 +1649,18 @@ public class MessagesFragment extends Fragment implements MenuProvider {
         }
     }
 
+    void notifyDeliveryStatusChanged(@Nullable Integer seq) {
+        if (mMessagesAdapter != null) {
+            mMessagesAdapter.notifyDeliveryStatusChanged(seq);
+        }
+    }
+
+    void notifySenderInfoChanged(@NonNull Collection<String> userIds) {
+        if (mMessagesAdapter != null && userIds != null && !userIds.isEmpty()) {
+            mMessagesAdapter.notifySenderInfoChanged(userIds);
+        }
+    }
+
     private void openFileSelector(@NonNull Activity activity, boolean checkPermissions) {
         if (activity.isFinishing() || activity.isDestroyed()) {
             return;
@@ -1342,6 +1702,99 @@ public class MessagesFragment extends Fragment implements MenuProvider {
         }
     }
 
+    private void setupAttachTray(@NonNull View root, @NonNull Activity activity) {
+        root.findViewById(R.id.trayCamera).setOnClickListener(v -> {
+            if (mComposer != null) {
+                mComposer.dispatch(ComposerEvent.hideTray("trayCamera", v));
+            }
+            openCameraDirect(activity);
+        });
+        root.findViewById(R.id.trayGallery).setOnClickListener(v -> {
+            if (mComposer != null) {
+                mComposer.dispatch(ComposerEvent.hideTray("trayGallery", v));
+            }
+            openGalleryDirect(activity);
+        });
+        root.findViewById(R.id.trayVideo).setOnClickListener(v -> {
+            if (mComposer != null) {
+                mComposer.dispatch(ComposerEvent.hideTray("trayVideo", v));
+            }
+            openVideoDirect(activity);
+        });
+        root.findViewById(R.id.trayFile).setOnClickListener(v -> {
+            if (mComposer != null) {
+                mComposer.dispatch(ComposerEvent.hideTray("trayFile", v));
+            }
+            openFileSelector(activity, true);
+        });
+    }
+
+    private void logComposerState(@NonNull String event, @Nullable View anchor) {
+        if (mComposer != null) {
+            mComposer.logExternalState(event, anchor);
+        }
+    }
+
+    private String viewName(int id) {
+        if (id == View.NO_ID) {
+            return "no-id";
+        }
+        try {
+            return getResources().getResourceEntryName(id);
+        } catch (Exception ignored) {
+            return String.valueOf(id);
+        }
+    }
+
+    private void openGalleryDirect(@NonNull Activity activity) {
+        if (activity.isFinishing() || activity.isDestroyed()) {
+            return;
+        }
+        try {
+            mGalleryLauncher.launch(new PickVisualMediaRequest.Builder()
+                    .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo.INSTANCE)
+                    .build());
+        } catch (ActivityNotFoundException ex) {
+            Toast.makeText(activity, R.string.unable_to_open_gallery, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void openCameraDirect(@NonNull Activity activity) {
+        if (activity.isFinishing() || activity.isDestroyed()) {
+            return;
+        }
+        try {
+            mTempPhotoUri = UtilsMedia.createTempPhotoUri(activity);
+            if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) ==
+                    PackageManager.PERMISSION_GRANTED) {
+                mTakePhotoLauncher.launch(mTempPhotoUri);
+            } else {
+                mCameraRequestPermissionLauncher.launch(Manifest.permission.CAMERA);
+            }
+        } catch (IOException ex) {
+            Log.w(TAG, "Failed to create temp file for photo", ex);
+            Toast.makeText(activity, R.string.action_failed, Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void openVideoDirect(@NonNull Activity activity) {
+        if (activity.isFinishing() || activity.isDestroyed()) {
+            return;
+        }
+        try {
+            mTempVideoUri = UtilsMedia.createTempVideoUri(activity);
+            if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) ==
+                    PackageManager.PERMISSION_GRANTED) {
+                mRecordVideoLauncher.launch(mTempVideoUri);
+            } else {
+                mVideoRequestPermissionLauncher.launch(Manifest.permission.CAMERA);
+            }
+        } catch (IOException ex) {
+            Log.w(TAG, "Failed to create temp file for video", ex);
+            Toast.makeText(activity, R.string.action_failed, Toast.LENGTH_SHORT).show();
+        }
+    }
+
     private boolean sendMessage(Drafty content, int seqId, boolean isReplacement) {
         MessageActivity activity = (MessageActivity) requireActivity();
         boolean done = activity.sendMessage(content, seqId, isReplacement);
@@ -1360,35 +1813,14 @@ public class MessagesFragment extends Fragment implements MenuProvider {
             return;
         }
 
-        if (mContentToForward != null) {
-            if (sendMessage(mForwardSender.appendLineBreak().append(mContentToForward), -1, false)) {
-                mForwardSender = null;
-                mContentToForward = null;
-            }
-            activity.findViewById(R.id.forwardMessagePanel).setVisibility(View.GONE);
-            activity.findViewById(R.id.sendMessagePanel).setVisibility(View.VISIBLE);
-            return;
-        }
-
         String message = inputField.getText().toString().trim();
-        if (!message.isEmpty()) {
-            Drafty msg = Drafty.parse(message);
-            boolean isReplacement = false;
-            if (mTextAction == UiUtils.MsgAction.EDIT) {
-                isReplacement = true;
-            } else if (mQuote != null) {
-                msg = mQuote.append(msg);
+        ComposerFacade.SendSpec spec = mComposer != null ? mComposer.createSendSpec(message) : null;
+        if (spec != null && sendMessage(spec.content, spec.seqId, spec.replacement)) {
+            if (mComposer != null) {
+                mComposer.onSendCommitted(spec);
             }
-            if (sendMessage(msg, mQuotedSeqID, isReplacement)) {
-                // Message is successfully queued, clear text from the input field and redraw the list.
-                inputField.getText().clear();
-                if (mQuotedSeqID > 0) {
-                    mTextAction = UiUtils.MsgAction.NONE;
-                    mQuotedSeqID = -1;
-                    mQuote = null;
-                    activity.findViewById(R.id.replyPreviewWrapper).setVisibility(View.GONE);
-                }
-            }
+            // Message is successfully queued, clear text from the input field and redraw the list.
+            inputField.getText().clear();
         }
     }
 
@@ -1421,73 +1853,93 @@ public class MessagesFragment extends Fragment implements MenuProvider {
             return;
         }
 
-        mQuotedSeqID = -1;
-        mQuote = null;
-        mContentToForward = null;
-        mForwardSender = null;
+        if (mComposer != null) {
+            mComposer.dispatch(ComposerEvent.cancelPreview());
+        }
+    }
 
-        activity.findViewById(R.id.replyPreviewWrapper).setVisibility(View.GONE);
-        activity.findViewById(R.id.forwardMessagePanel).setVisibility(View.GONE);
-        activity.findViewById(R.id.sendMessagePanel).setVisibility(View.VISIBLE);
-        if (mTextAction == UiUtils.MsgAction.EDIT) {
-            ((EditText) activity.findViewById(R.id.editMessage)).setText("");
-            activity.findViewById(R.id.chatEditDoneButton).setVisibility(View.INVISIBLE);
-            activity.findViewById(R.id.chatAudioButton).setVisibility(View.VISIBLE);
+    private boolean handleComposerBackPressed() {
+        if (mComposer == null) {
+            return false;
         }
 
-        mTextAction = UiUtils.MsgAction.NONE;
+        if (mComposer.handleBackPressed()) {
+            return true;
+        }
+
+        ComposerPanelController.Panel visiblePanel = mComposer.getVisiblePanel();
+        if (visiblePanel == ComposerPanelController.Panel.RECORD
+                || visiblePanel == ComposerPanelController.Panel.RECORD_SHORT) {
+            resetRecordingComposer();
+            return true;
+        }
+
+        if (visiblePanel == ComposerPanelController.Panel.FORWARD
+                || mComposer.hasQuotedContent()
+                || mComposer.isEditing()) {
+            mComposer.dispatch(ComposerEvent.cancelPreview());
+            return true;
+        }
+
+        return false;
+    }
+
+    boolean handleNavigationBack() {
+        return handleComposerBackPressed();
+    }
+
+    private void resetRecordingComposer() {
+        if (!isAdded()) {
+            return;
+        }
+
+        View root = getView();
+        if (root == null) {
+            return;
+        }
+
+        mAudioSamplingHandler.removeCallbacksAndMessages(null);
+        releaseAudio(false);
+
+        View recorder = root.findViewById(R.id.audioRecorder);
+        View lockHint = root.findViewById(R.id.lockAudioRecording);
+        View deleteHint = root.findViewById(R.id.deleteAudioRecording);
+        View audioButton = root.findViewById(R.id.chatAudioButton);
+        View stopButton = root.findViewById(R.id.stopRecording);
+        View playButton = root.findViewById(R.id.playRecording);
+        View pauseButton = root.findViewById(R.id.pauseRecording);
+        ImageView wave = root.findViewById(R.id.audioWave);
+        ImageView waveShort = root.findViewById(R.id.audioWaveShort);
+
+        recorder.setVisibility(View.INVISIBLE);
+        lockHint.setVisibility(View.GONE);
+        deleteHint.setVisibility(View.GONE);
+        audioButton.setVisibility(View.VISIBLE);
+        stopButton.setVisibility(View.VISIBLE);
+        playButton.setVisibility(View.GONE);
+        pauseButton.setVisibility(View.GONE);
+        ((WaveDrawable) wave.getBackground()).release();
+        ((WaveDrawable) waveShort.getBackground()).release();
+
+        mComposer.dispatch(ComposerEvent.audioRecordingCancelled());
     }
 
     void startEditing(Activity activity, String original, Drafty quote, int seq) {
-        handleQuotedText(activity, UiUtils.MsgAction.EDIT, original, quote, seq);
+        if (mComposer != null) {
+            mComposer.dispatch(ComposerEvent.beginEditing(original, quote, seq));
+        }
     }
 
     void showReply(Activity activity, Drafty quote, int seq) {
-        handleQuotedText(activity, UiUtils.MsgAction.REPLY, null, quote, seq);
-    }
-
-    private void handleQuotedText(Activity activity, UiUtils.MsgAction action,
-                                  String original, Drafty quote, int seq) {
-        mQuotedSeqID = seq;
-        mQuote = quote;
-        mContentToForward = null;
-        mForwardSender = null;
-
-        activity.findViewById(R.id.forwardMessagePanel).setVisibility(View.GONE);
-        activity.findViewById(R.id.sendMessagePanel).setVisibility(View.VISIBLE);
-        activity.findViewById(R.id.replyPreviewWrapper).setVisibility(View.VISIBLE);
-        if (!TextUtils.isEmpty(original)) {
-            EditText editText = activity.findViewById(R.id.editMessage);
-            // Two steps: clear field, then append to move cursor to the end.
-            editText.setText("");
-            editText.append(original);
-            editText.requestFocus();
-            activity.findViewById(R.id.chatAudioButton).setVisibility(View.INVISIBLE);
-            activity.findViewById(R.id.chatSendButton).setVisibility(View.INVISIBLE);
-            activity.findViewById(R.id.chatEditDoneButton).setVisibility(View.VISIBLE);
-        } else {
-            activity.findViewById(R.id.chatAudioButton).setVisibility(View.VISIBLE);
-            activity.findViewById(R.id.chatSendButton).setVisibility(View.INVISIBLE);
-            activity.findViewById(R.id.chatEditDoneButton).setVisibility(View.INVISIBLE);
-            if (mTextAction == UiUtils.MsgAction.EDIT) {
-                ((EditText)activity.findViewById(R.id.editMessage)).setText("");
-            }
+        if (mComposer != null) {
+            mComposer.dispatch(ComposerEvent.beginReply(quote, seq));
         }
-        TextView previewHolder = activity.findViewById(R.id.contentPreview);
-        previewHolder.setText(quote.format(new SendReplyFormatter(previewHolder)));
-        mTextAction = action;
     }
 
     private void showContentToForward(Activity activity, Drafty sender, Drafty content) {
-        mTextAction = UiUtils.MsgAction.FORWARD;
-        mQuotedSeqID = -1;
-        mQuote = null;
-
-        activity.findViewById(R.id.sendMessagePanel).setVisibility(View.GONE);
-        TextView previewHolder = activity.findViewById(R.id.forwardedContentPreview);
-        content = new Drafty().append(sender).appendLineBreak().append(content.preview(Const.QUOTED_REPLY_LENGTH));
-        previewHolder.setText(content.format(new SendForwardedFormatter(previewHolder)));
-        activity.findViewById(R.id.forwardMessagePanel).setVisibility(View.VISIBLE);
+        if (mComposer != null) {
+            mComposer.dispatch(ComposerEvent.beginForward(sender, content));
+        }
     }
 
     void topicChanged(String topicName, boolean reset) {
@@ -1506,14 +1958,15 @@ public class MessagesFragment extends Fragment implements MenuProvider {
                 mMessageToSend = args.getString(MESSAGE_TO_SEND);
                 args.remove(MESSAGE_TO_SEND);
 
-                if (changed) {
-                    String textAction = args.getString(MESSAGE_TEXT_ACTION);
-                    mTextAction = TextUtils.isEmpty(textAction) ? UiUtils.MsgAction.NONE :
-                            UiUtils.MsgAction.valueOf(textAction);
-                    mQuotedSeqID = args.getInt(MESSAGE_QUOTED_SEQ_ID);
-                    mQuote = (Drafty) args.getSerializable(MESSAGE_QUOTED);
-                    mContentToForward = (Drafty) args.getSerializable(ForwardToFragment.CONTENT_TO_FORWARD);
-                    mForwardSender = (Drafty) args.getSerializable(ForwardToFragment.FORWARDING_FROM_USER);
+                if (changed && mComposer != null) {
+                    mComposer.restoreStateFromArgs(
+                            args,
+                            MESSAGE_TEXT_ACTION,
+                            MESSAGE_QUOTED_SEQ_ID,
+                            MESSAGE_QUOTED,
+                            ForwardToFragment.CONTENT_TO_FORWARD,
+                            ForwardToFragment.FORWARDING_FROM_USER
+                    );
 
                     // Clear used arguments.
                     args.remove(MESSAGE_TEXT_ACTION);
@@ -1528,7 +1981,16 @@ public class MessagesFragment extends Fragment implements MenuProvider {
         updateFormValues();
         if (reset) {
             runMessagesLoader(mTopicName);
+            mInitialLoaderStarted = true;
         }
+    }
+
+    boolean isShowingTopic(@Nullable String topicName) {
+        if (TextUtils.isEmpty(topicName) || TextUtils.isEmpty(mTopicName)) {
+            return false;
+        }
+        String canonical = Tinode.parseTinodeUrl(topicName);
+        return TextUtils.equals(mTopicName, canonical);
     }
 
     private int findItemPositionById(long id) {
@@ -1566,7 +2028,7 @@ public class MessagesFragment extends Fragment implements MenuProvider {
                                         return;
                                     }
                                     activity.syncAllMessages(true);
-                                    notifyDataSetChanged(false);
+                                    activity.runMessagesLoaderNow();
                             }, ContextCompat.getMainExecutor(activity));
                     }
                 }

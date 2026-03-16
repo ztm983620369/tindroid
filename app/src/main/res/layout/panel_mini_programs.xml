@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Mini-program panel revealed when user pulls down the chat list. -->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/miniProgramPanel"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="?android:colorBackground"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp">
+
+    <!-- Section title -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="8dp"
+        android:text="@string/mini_programs"
+        android:textSize="13sp"
+        android:textColor="?android:textColorSecondary" />
+
+    <!-- Grid of mini-program shortcuts: 4 columns -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/miniProgramGrid"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:overScrollMode="never"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <!-- Pull-down hint indicator -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="bottom|center_horizontal"
+        android:layout_marginTop="18dp"
+        android:paddingBottom="6dp">
+
+        <View
+            android:layout_width="32dp"
+            android:layout_height="3dp"
+            android:background="@drawable/pill_indicator" />
+    </LinearLayout>
+
+</LinearLayout>

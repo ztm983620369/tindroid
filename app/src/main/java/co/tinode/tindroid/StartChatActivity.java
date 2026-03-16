@@ -21,6 +21,8 @@ public class StartChatActivity extends BaseActivity
 
     static final String FRAGMENT_TABS = "tabs";
     static final String FRAGMENT_AVATAR_PREVIEW = "avatar_preview";
+    static final String EXTRA_INITIAL_TAB = "co.tinode.tindroid.extra.INITIAL_TAB";
+    static final String EXTRA_BY_ID_START_SCAN = "co.tinode.tindroid.extra.BY_ID_START_SCAN";
 
     // Limit the number of times permissions are requested per session.
     private boolean mReadContactsPermissionsAlreadyRequested = false;

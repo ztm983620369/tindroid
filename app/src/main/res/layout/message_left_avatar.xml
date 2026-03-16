@@ -18,14 +18,17 @@
             android:id="@+id/messageBubble"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:background="@drawable/bubble_l_z"
+            android:background="@drawable/chat_bubble_left_plain"
             android:backgroundTint="@color/colorMessageBubbleOther"
             android:backgroundTintMode="multiply"
             android:clickable="false"
             android:focusable="false"
+            android:elevation="@dimen/chat_bubble_elevation"
             android:layout_marginStart="29dp"
-            android:paddingStart="6dp"
-            android:paddingEnd="6dp"
+            android:paddingStart="@dimen/chat_bubble_padding_horizontal"
+            android:paddingTop="@dimen/chat_bubble_padding_vertical"
+            android:paddingEnd="@dimen/chat_bubble_padding_horizontal"
+            android:paddingBottom="@dimen/chat_bubble_padding_vertical"
             android:orientation="vertical">
 
             <co.tinode.tindroid.widgets.DynamicTextView
@@ -35,9 +38,7 @@
                 android:clickable="false"
                 android:focusable="false"
                 android:maxWidth="270dp"
-                android:minWidth="102dp"
-                android:paddingStart="16.5dp"
-                android:paddingEnd="4dp"
+                android:minWidth="84dp"
                 android:textColor="?android:textColorPrimary"
                 tools:ignore="RtlSymmetry"
                 tools:text="Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua." />
@@ -67,10 +68,10 @@
                     android:layout_gravity="end"
                     android:clickable="false"
                     android:focusable="false"
-                    android:paddingLeft="4dp"
-                    android:paddingRight="4dp"
+                    android:paddingStart="2dp"
                     android:textColor="?android:textColorSecondary"
                     android:textSize="11sp"
+                    android:visibility="gone"
                     tools:ignore="SmallSp"
                     tools:text="Jun 11 22:17" />
 

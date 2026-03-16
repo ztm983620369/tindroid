@@ -35,7 +35,7 @@ import co.tinode.tinodesdk.model.ServerMessage;
 public class Cache {
     private static final String TAG = "Cache";
 
-    private static final String API_KEY = "AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K";
+    private static final String API_KEY = "AQAAAAABAADogSXzdb1qdpLotw8wPFH-";
 
     private static final Cache sInstance = new Cache();
 
@@ -139,37 +139,41 @@ public class Cache {
         }
 
         if (!sInstance.mFCMTokenRequested) {
-            FirebaseMessaging fbId = FirebaseMessaging.getInstance();
-            //noinspection ConstantConditions: Google lies about getInstance not returning null.
-            if (fbId != null) {
-                sInstance.mFCMTokenRequested = true;
-                fbId.getToken().addOnCompleteListener(task -> {
-                    if (!task.isSuccessful()) {
-                        // Retry to fetch token later.
-                        sInstance.mFCMTokenRequested = false;
-                        Log.w(TAG, "Fetching FCM registration token failed", task.getException());
-                        return;
-                    }
-                    String token = task.getResult();
-                    if (sInstance.mTinode != null) {
-                        sInstance.mTinode.setDeviceToken(token)
-                                .thenCatch(new PromisedReply.FailureListener<>() {
-                                    @Override
-                                    public <E extends Exception> PromisedReply<ServerMessage> onFailure(E err) {
-                                        String message = err.getMessage();
-                                        if (TextUtils.isEmpty(message)) {
-                                            message = err.getClass().getName();
-                                        }
-                                        Log.w(TAG, "Failed to update FCM token: " + message);
-                                        return null;
-                                    }
-                                });
-                    } else {
-                        Log.w(TAG, "Unable to report FCM token to server: not initialized");
-                    }
-                });
+            if (!TindroidApp.isFirebaseAvailable()) {
+                Log.i(TAG, "Firebase is not configured; skipping FCM token fetch");
             } else {
-                Log.w(TAG, "FirebaseMessaging not available");
+                FirebaseMessaging fbId = FirebaseMessaging.getInstance();
+                //noinspection ConstantConditions: Google lies about getInstance not returning null.
+                if (fbId != null) {
+                    sInstance.mFCMTokenRequested = true;
+                    fbId.getToken().addOnCompleteListener(task -> {
+                        if (!task.isSuccessful()) {
+                            // Retry to fetch token later.
+                            sInstance.mFCMTokenRequested = false;
+                            Log.w(TAG, "Fetching FCM registration token failed", task.getException());
+                            return;
+                        }
+                        String token = task.getResult();
+                        if (sInstance.mTinode != null) {
+                            sInstance.mTinode.setDeviceToken(token)
+                                    .thenCatch(new PromisedReply.FailureListener<>() {
+                                        @Override
+                                        public <E extends Exception> PromisedReply<ServerMessage> onFailure(E err) {
+                                            String message = err.getMessage();
+                                            if (TextUtils.isEmpty(message)) {
+                                                message = err.getClass().getName();
+                                            }
+                                            Log.w(TAG, "Failed to update FCM token: " + message);
+                                            return null;
+                                        }
+                                    });
+                        } else {
+                            Log.w(TAG, "Unable to report FCM token to server: not initialized");
+                        }
+                    });
+                } else {
+                    Log.w(TAG, "FirebaseMessaging not available");
+                }
             }
         }
         return sInstance.mTinode;
@@ -183,7 +187,9 @@ public class Cache {
             sInstance.mTinode.logout();
             sInstance.mTinode = null;
         }
-        FirebaseMessaging.getInstance().deleteToken();
+        if (TindroidApp.isFirebaseAvailable()) {
+            FirebaseMessaging.getInstance().deleteToken();
+        }
     }
 
     public static CallInProgress getCallInProgress() {

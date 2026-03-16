@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="colorMessageBubbleMine">#FF202020</color>
-    <color name="colorMessageBubbleMineFlashing">#F666</color>
-    <color name="colorMessageBubbleMineFlashingLight">#F444</color>
-    <color name="colorMessageBubbleOther">#FF003308</color>
-    <color name="colorMessageBubbleOtherFlashing">#FF558870</color>
-    <color name="colorMessageBubbleOtherFlashingLight">#FF305530</color>
+    <color name="colorMessageBubbleMine">#FF2F6B1E</color>
+    <color name="colorMessageBubbleMineFlashing">#FF255717</color>
+    <color name="colorMessageBubbleMineFlashingLight">#FF3A8125</color>
+    <color name="colorMessageBubbleOther">#FF2C2C2C</color>
+    <color name="colorMessageBubbleOtherFlashing">#FF3B3B3B</color>
+    <color name="colorMessageBubbleOtherFlashingLight">#FF454545</color>
 
     <color name="colorReplyBubble">#10CCCCCC</color>
     <color name="colorReplyText">#CCCCCC</color>
@@ -33,6 +33,8 @@
     <color name="colorImagePreviewBg">#333333</color>
 
     <color name="colorImagePlaceholder">#212121</color>
+    <color name="composerDockBg">#FF1F1F1F</color>
+    <color name="composerInputBg">#FF2A2A2A</color>
 
     <color name="circularProgressBg">#FF666666</color>
     <color name="circularProgressFg">#FFCCCCCC</color>

@@ -23,10 +23,13 @@ import android.os.Message;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.MenuItem;
+import android.view.View;
+import android.view.WindowManager;
 import android.widget.Toast;
 
 import com.google.firebase.messaging.RemoteMessage;
 
+import java.io.Closeable;
 import java.io.File;
 import java.lang.ref.WeakReference;
 import java.net.URI;
@@ -84,6 +87,7 @@ import co.tinode.tinodesdk.model.Subscription;
 public class MessageActivity extends BaseActivity
         implements ImageViewFragment.AvatarCompletionHandler {
     private static final String TAG = "MessageActivity";
+    private static final String TRACE_TAG = "ImeTrace";
 
     static final String FRAGMENT_MESSAGES = "msg";
     static final String FRAGMENT_INVALID = "invalid";
@@ -185,10 +189,19 @@ public class MessageActivity extends BaseActivity
     // Only for grp topics:
     // Keeps track of the known subscriptions for the given topic.
     private Set<String> mKnownSubs = null;
-    // True when new subscriptions were added to the topic.
-    private boolean mNewSubsAvailable = false;
+    // IDs of users whose subscription info changed; used to refresh visible sender rows without a full list rebind.
+    private Set<String> mDirtySubs = null;
     // Tracker of pinned changes to prevent endless loop.
     private int mPinHash = -1;
+
+    private static final int MESSAGES_LOADER_DEBOUNCE_MS = 80;
+    private final Handler mMessagesLoaderHandler = new Handler(Looper.getMainLooper());
+    private final Runnable mMessagesLoaderRunnable = new Runnable() {
+        @Override
+        public void run() {
+            runMessagesLoaderNow();
+        }
+    };
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override
@@ -202,7 +215,12 @@ public class MessageActivity extends BaseActivity
         UiUtils.setupSystemToolbar(this);
 
         setContentView(R.layout.activity_messages);
-        applyEdgeToEdgeInsets(findViewById(android.R.id.content));
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
+        applyEdgeToEdgeInsets(findViewById(android.R.id.content), true, true);
+        if (BuildConfig.DEBUG) {
+            Log.d(TRACE_TAG, "MessageActivity onCreate softInputMode="
+                    + getWindow().getAttributes().softInputMode + " topic=" + mTopicName);
+        }
 
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
@@ -212,10 +230,15 @@ public class MessageActivity extends BaseActivity
             ab.setDisplayShowHomeEnabled(true);
         }
         toolbar.setNavigationOnClickListener(v -> {
-            if (isFragmentVisible(FRAGMENT_MESSAGES) || isFragmentVisible(FRAGMENT_INVALID)) {
-                Intent intent = new Intent(MessageActivity.this, ChatsActivity.class);
-                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                startActivity(intent);
+            if (isFragmentVisible(FRAGMENT_MESSAGES)) {
+                MessagesFragment messages = (MessagesFragment) getSupportFragmentManager()
+                        .findFragmentByTag(FRAGMENT_MESSAGES);
+                if (messages != null && messages.handleNavigationBack()) {
+                    return;
+                }
+                navigateBackToChats();
+            } else if (isFragmentVisible(FRAGMENT_INVALID)) {
+                navigateBackToChats();
             } else if (isFragmentVisible(FRAGMENT_FORWARD_TO)) {
                 getSupportFragmentManager().popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE);
                 showFragment(FRAGMENT_MESSAGES, null, false);
@@ -244,6 +267,17 @@ public class MessageActivity extends BaseActivity
         mNoteReadHandler = new NoteHandler(this);
     }
 
+    private void navigateBackToChats() {
+        if (!isTaskRoot()) {
+            finish();
+            return;
+        }
+        Intent intent = new Intent(this, ChatsActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        startActivity(intent);
+        finish();
+    }
+
     @Override
     protected void onNewIntent(@NonNull Intent intent) {
         super.onNewIntent(intent);
@@ -254,6 +288,11 @@ public class MessageActivity extends BaseActivity
     @Override
     public void onResume() {
         super.onResume();
+        if (BuildConfig.DEBUG) {
+            Log.d(TRACE_TAG, "MessageActivity onResume topic=" + mTopicName
+                    + " intent=" + getIntent()
+                    + " focus=" + describeView(getCurrentFocus()));
+        }
 
         // Intent with parameters passed on start of the activity.
         final Intent intent = getIntent();
@@ -263,10 +302,8 @@ public class MessageActivity extends BaseActivity
         intent.putExtra(Intent.EXTRA_TEXT, (String) null);
 
         // If topic name is not saved, get it from intent, internal or external.
-        String topicName = mTopicName;
-        if (TextUtils.isEmpty(mTopicName)) {
-            topicName = readTopicNameFromIntent(intent);
-        }
+        String topicFromIntent = readTopicNameFromIntent(intent);
+        String topicName = !TextUtils.isEmpty(topicFromIntent) ? topicFromIntent : mTopicName;
 
         if (!changeTopic(topicName, false)) {
             Cache.setSelectedTopicName(null);
@@ -373,8 +410,8 @@ public class MessageActivity extends BaseActivity
             }
         }
 
-        mNewSubsAvailable = false;
         mKnownSubs = new HashSet<>();
+        mDirtySubs = new HashSet<>();
 
         if (mTopic == null) {
             return true;
@@ -403,7 +440,13 @@ public class MessageActivity extends BaseActivity
 
         MessagesFragment fragmsg = (MessagesFragment) getSupportFragmentManager().findFragmentByTag(FRAGMENT_MESSAGES);
         if (fragmsg != null) {
-            fragmsg.topicChanged(topicName, forceReset || changed);
+            boolean reset = forceReset || changed;
+            if (reset && fragmsg.isShowingTopic(topicName)) {
+                // MessagesFragment may already have started loading from its own onResume.
+                // Avoid a duplicate loader run which looks like a "refresh" on entry.
+                reset = false;
+            }
+            fragmsg.topicChanged(topicName, reset);
         }
 
         return true;
@@ -472,7 +515,9 @@ public class MessageActivity extends BaseActivity
         } else {
             MessagesFragment fragmsg = (MessagesFragment) fm.findFragmentByTag(FRAGMENT_MESSAGES);
             if (fragmsg != null) {
-                fragmsg.topicChanged(mTopicName, true);
+                // Topic meta might have changed after successful attach, but forcing a full reset causes
+                // a visible "refresh" on entry. Only reset if this fragment is not showing the topic yet.
+                fragmsg.topicChanged(mTopicName, !fragmsg.isShowingTopic(mTopicName));
             }
         }
         return visible;
@@ -492,7 +537,6 @@ public class MessageActivity extends BaseActivity
             return;
         }
 
-        setRefreshing(true);
         Topic.MetaGetBuilder builder = mTopic.getMetaGetBuilder()
                 .withDesc()
                 .withSub()
@@ -506,8 +550,8 @@ public class MessageActivity extends BaseActivity
 
         mTopic.subscribe(null, builder.build())
                 .thenApply(new PromisedReply.SuccessListener<>() {
-                    @Override
-                    public PromisedReply<ServerMessage> onSuccess(ServerMessage result) {
+            @Override
+            public PromisedReply<ServerMessage> onSuccess(ServerMessage result) {
                         if (result.ctrl != null && result.ctrl.code == 303) {
                             // Redirect.
                             changeTopic(result.ctrl.getStringParam("topic", null), false);
@@ -523,7 +567,7 @@ public class MessageActivity extends BaseActivity
                         });
                         // Submit pending messages for processing: publish queued,
                         // delete marked for deletion.
-                        syncAllMessages(true);
+                        syncAllMessages(hasQueuedWork());
                         return null;
                     }
                 })
@@ -550,6 +594,34 @@ public class MessageActivity extends BaseActivity
         });
     }
 
+    private boolean hasQueuedWork() {
+        if (mTopic == null) {
+            return false;
+        }
+        final Storage store = BaseDb.getInstance().getStore();
+
+        boolean hasQueuedMessages = false;
+        Object queued = store.getQueuedMessages(mTopic);
+        try {
+            if (queued instanceof java.util.Iterator) {
+                hasQueuedMessages = ((java.util.Iterator<?>) queued).hasNext();
+            }
+        } finally {
+            if (queued instanceof Closeable) {
+                try {
+                    ((Closeable) queued).close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+
+        MsgRange[] softDeletes = store.getQueuedMessageDeletes(mTopic, false);
+        MsgRange[] hardDeletes = store.getQueuedMessageDeletes(mTopic, true);
+        return hasQueuedMessages
+                || (softDeletes != null && softDeletes.length > 0)
+                || (hardDeletes != null && hardDeletes.length > 0);
+    }
+
     // Clean up everything related to the topic being replaced of removed.
     private void topicDetach(@Nullable ComTopic<VxCard> topic) {
         if (mTypingAnimationTimer != null) {
@@ -567,6 +639,8 @@ public class MessageActivity extends BaseActivity
     public void onDestroy() {
         super.onDestroy();
 
+        mMessagesLoaderHandler.removeCallbacks(mMessagesLoaderRunnable);
+
         Cache.getTinode().removeListener(mTinodeListener);
         topicDetach(mTopic);
         mTopic = null;
@@ -579,10 +653,42 @@ public class MessageActivity extends BaseActivity
         unregisterReceiver(onNotificationClick);
     }
 
+    @Override
+    public void finish() {
+        super.finish();
+        overridePendingTransition(R.anim.wechat_slide_in_left, R.anim.wechat_slide_out_right);
+    }
+
 
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
+        if (BuildConfig.DEBUG) {
+            Log.d(TRACE_TAG, "MessageActivity onWindowFocusChanged hasFocus=" + hasFocus
+                    + " topic=" + mTopicName
+                    + " focus=" + describeView(getCurrentFocus())
+                    + " softInputMode=" + getWindow().getAttributes().softInputMode);
+        }
         UiUtils.setVisibleTopic(hasFocus ? mTopicName : null);
+    }
+
+    private String describeView(View view) {
+        if (view == null) {
+            return "null";
+        }
+        String name;
+        if (view.getId() == View.NO_ID) {
+            name = "no-id";
+        } else {
+            try {
+                name = getResources().getResourceEntryName(view.getId());
+            } catch (Exception ignored) {
+                name = String.valueOf(view.getId());
+            }
+        }
+        return name + "/" + view.getClass().getSimpleName()
+                + " vis=" + view.getVisibility()
+                + " focused=" + view.hasFocus()
+                + " h=" + view.getHeight();
     }
 
     @Override
@@ -727,8 +833,10 @@ public class MessageActivity extends BaseActivity
 
         FragmentTransaction trx = fm.beginTransaction();
         if (!fragment.isAdded()) {
-            trx = trx.replace(R.id.contentFragment, fragment, tag)
-                    .setTransition(FragmentTransaction.TRANSIT_FRAGMENT_OPEN);
+            trx = trx.replace(R.id.contentFragment, fragment, tag);
+            if (addToBackstack) {
+                trx = trx.setTransition(FragmentTransaction.TRANSIT_FRAGMENT_OPEN);
+            }
         } else if (!fragment.isVisible()) {
             trx = trx.show(fragment);
         } else {
@@ -743,7 +851,13 @@ public class MessageActivity extends BaseActivity
             trx.addToBackStack(tag);
         }
         if (!trx.isEmpty()) {
-            trx.commit();
+            // Commit immediately when possible to render the first frame without a visible "refresh"
+            // after the activity transition finishes.
+            if (!addToBackstack && !fm.isStateSaved()) {
+                trx.commitNow();
+            } else {
+                trx.commit();
+            }
         }
     }
 
@@ -824,6 +938,11 @@ public class MessageActivity extends BaseActivity
     }
 
     void runMessagesLoader() {
+        mMessagesLoaderHandler.removeCallbacks(mMessagesLoaderRunnable);
+        mMessagesLoaderHandler.postDelayed(mMessagesLoaderRunnable, MESSAGES_LOADER_DEBOUNCE_MS);
+    }
+
+    void runMessagesLoaderNow() {
         final MessagesFragment fragment = (MessagesFragment) getSupportFragmentManager().
                 findFragmentByTag(FRAGMENT_MESSAGES);
         if (fragment != null && fragment.isVisible()) {
@@ -1068,7 +1187,7 @@ public class MessageActivity extends BaseActivity
                         MessagesFragment fragment = (MessagesFragment) getSupportFragmentManager().
                                 findFragmentByTag(FRAGMENT_MESSAGES);
                         if (fragment != null && fragment.isVisible()) {
-                            fragment.notifyDataSetChanged(false);
+                            fragment.notifyDeliveryStatusChanged(info != null ? info.seq : null);
                         }
                     });
                     break;
@@ -1104,12 +1223,11 @@ public class MessageActivity extends BaseActivity
                     if (fragment instanceof DataSetChangeListener) {
                         ((DataSetChangeListener) fragment).notifyDataSetChanged();
                     } else if (fragment instanceof MessagesFragment) {
-                        ((MessagesFragment) fragment).notifyDataSetChanged(true);
-                        if (mNewSubsAvailable) {
-                            mNewSubsAvailable = false;
-                            // Reload so we can correctly display messages from
-                            // new users (subscriptions).
-                            ((MessagesFragment) fragment).notifyDataSetChanged(false);
+                        MessagesFragment messages = (MessagesFragment) fragment;
+                        messages.notifyDataSetChanged(true);
+                        if (mDirtySubs != null && !mDirtySubs.isEmpty()) {
+                            messages.notifySenderInfoChanged(mDirtySubs);
+                            mDirtySubs.clear();
                         }
                     }
                 }
@@ -1135,9 +1253,13 @@ public class MessageActivity extends BaseActivity
 
         @Override
         public void onMetaSub(Subscription<VxCard, PrivateType> sub) {
-            if (mTopic.isGrpType() && sub.user != null && !mKnownSubs.contains(sub.user)) {
-                mKnownSubs.add(sub.user);
-                mNewSubsAvailable = true;
+            if (sub.user != null) {
+                if (mKnownSubs != null) {
+                    mKnownSubs.add(sub.user);
+                }
+                if (mDirtySubs != null) {
+                    mDirtySubs.add(sub.user);
+                }
             }
         }
 

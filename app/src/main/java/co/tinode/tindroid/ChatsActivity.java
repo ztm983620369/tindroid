@@ -8,9 +8,14 @@ import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.Menu;
+import android.view.View;
+import android.widget.Toast;
 
 import java.util.List;
 
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
 import androidx.fragment.app.FragmentManager;
@@ -52,6 +57,8 @@ public class ChatsActivity extends BaseActivity
     private ContactsEventListener mTinodeListener = null;
     private MeListener mMeTopicListener = null;
     private MeTopic<VxCard> mMeTopic = null;
+    private co.tinode.tindroid.widgets.WeChatPullLayout mHomePullLayout = null;
+    private MiniProgramsPanelController mMiniPrograms = null;
 
     private Account mAccount;
 
@@ -62,11 +69,32 @@ public class ChatsActivity extends BaseActivity
         UiUtils.setupSystemToolbar(this);
 
         setContentView(R.layout.activity_contacts);
-        applyEdgeToEdgeInsets(findViewById(android.R.id.content));
+        mHomePullLayout = findViewById(R.id.homePullLayout);
+        View miniProgramPanel = findViewById(R.id.miniProgramPanel);
+        if (miniProgramPanel != null) {
+            int basePaddingTop = miniProgramPanel.getPaddingTop();
+            ViewCompat.setOnApplyWindowInsetsListener(miniProgramPanel, (v, windowInsets) -> {
+                Insets insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars());
+                v.setPadding(v.getPaddingLeft(),
+                        basePaddingTop + insets.top,
+                        v.getPaddingRight(),
+                        v.getPaddingBottom());
+                return windowInsets;
+            });
+        }
+        mMiniPrograms = new MiniProgramsPanelController(miniProgramPanel,
+                () -> {
+                    if (mHomePullLayout != null) {
+                        mHomePullLayout.closePanel(true);
+                    }
+                },
+                this::onMiniProgramSelected);
+        applyEdgeToEdgeInsets(findViewById(android.R.id.content), false, false);
 
         setSupportActionBar(findViewById(R.id.toolbar));
 
         FragmentManager fm = getSupportFragmentManager();
+        fm.addOnBackStackChangedListener(this::syncPullAvailability);
 
         if (fm.findFragmentByTag(FRAGMENT_CHATLIST) == null) {
             Fragment fragment = new ChatsFragment();
@@ -75,6 +103,7 @@ public class ChatsActivity extends BaseActivity
                     .setPrimaryNavigationFragment(fragment)
                     .commit();
         }
+        findViewById(android.R.id.content).post(this::syncPullAvailability);
 
         mMeTopic = Cache.getTinode().getOrCreateMeTopic();
         mMeTopicListener = new MeListener();
@@ -109,6 +138,61 @@ public class ChatsActivity extends BaseActivity
         String tag = intent.getStringExtra(TAG_FRAGMENT_NAME);
         if (!TextUtils.isEmpty(tag)) {
             showFragment(tag, null);
+        }
+        syncPullAvailability();
+    }
+
+    private void onMiniProgramSelected(MiniProgramsPanelController.Id id, int labelResId) {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        switch (id) {
+            case SCAN: {
+                Intent intent = new Intent(this, StartChatActivity.class);
+                intent.putExtra(StartChatActivity.EXTRA_INITIAL_TAB, 2);
+                intent.putExtra(StartChatActivity.EXTRA_BY_ID_START_SCAN, true);
+                startActivity(intent);
+                break;
+            }
+            case SEARCH: {
+                Intent intent = new Intent(this, StartChatActivity.class);
+                intent.putExtra(StartChatActivity.EXTRA_INITIAL_TAB, 0);
+                startActivity(intent);
+                break;
+            }
+            case FAVORITES: {
+                Intent intent = new Intent(this, MessageActivity.class);
+                intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                intent.putExtra(Const.INTENT_EXTRA_TOPIC, Tinode.TOPIC_SLF);
+                startActivity(intent);
+                break;
+            }
+            case MOMENTS:
+                showFragment(FRAGMENT_WALLPAPERS, null);
+                break;
+            case MORE:
+                showFragment(FRAGMENT_ACCOUNT_INFO, null);
+                break;
+            case PAY:
+            case NEARBY:
+            case GAMES:
+            default:
+                Toast.makeText(this,
+                        getString(R.string.mini_program_unavailable, getString(labelResId)),
+                        Toast.LENGTH_SHORT)
+                        .show();
+                break;
+        }
+    }
+
+    private void syncPullAvailability() {
+        Fragment fragment = UiUtils.getVisibleFragment(getSupportFragmentManager());
+        boolean enabled = fragment != null && FRAGMENT_CHATLIST.equals(fragment.getTag());
+        if (mMiniPrograms != null) {
+            mMiniPrograms.setEnabled(enabled);
+        }
+        if (mHomePullLayout != null) {
+            mHomePullLayout.setPullEnabled(enabled);
         }
     }
 

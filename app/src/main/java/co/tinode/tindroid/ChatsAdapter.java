@@ -17,6 +17,10 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -25,6 +29,7 @@ import androidx.core.content.res.ResourcesCompat;
 import androidx.recyclerview.selection.ItemDetailsLookup;
 import androidx.recyclerview.selection.ItemKeyProvider;
 import androidx.recyclerview.selection.SelectionTracker;
+import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.RecyclerView;
 import co.tinode.tindroid.db.StoredTopic;
 import co.tinode.tindroid.format.PreviewFormatter;
@@ -39,6 +44,9 @@ import co.tinode.tinodesdk.model.TheCard;
  */
 public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ViewHolder> {
     private static final int MAX_MESSAGE_PREVIEW_LENGTH = 60;
+    private static final String EMPTY_KEY = "__empty__";
+
+    private static final ExecutorService sDiffExecutor = Executors.newSingleThreadExecutor();
 
     private static int sColorOffline;
     private static int sColorOnline;
@@ -49,6 +57,9 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ViewHolder> 
     private final Filter mTopicFilter;
     // Optional filter to find topics by name.
     private Filter mTextFilter = null;
+
+    private final AtomicInteger mResetGeneration = new AtomicInteger();
+    private volatile TopicSnapshot mSnapshot = TopicSnapshot.empty();
 
     ChatsAdapter(Context context, ClickListener clickListener, @Nullable Filter filter) {
         super();
@@ -70,20 +81,48 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ViewHolder> 
             return;
         }
 
-        final Collection<ComTopic<VxCard>> newTopics = Cache.getTinode().getFilteredTopics(t ->
-                t.getTopicType().match(ComTopic.TopicType.USER) &&
-                        mTopicFilter.filter((ComTopic) t) &&
-                        mTextFilter.filter((ComTopic) t));
+        final Filter topicFilter = mTopicFilter;
+        final Filter textFilter = mTextFilter;
+        final int generation = mResetGeneration.incrementAndGet();
+        final TopicSnapshot oldSnapshot = mSnapshot;
 
-        final HashMap<String, Integer> newTopicIndex = new HashMap<>(newTopics.size());
-        for (ComTopic t : newTopics) {
-            newTopicIndex.put(t.getName(), newTopicIndex.size());
-        }
+        sDiffExecutor.execute(() -> {
+            final Collection<ComTopic<VxCard>> newTopics = Cache.getTinode().getFilteredTopics(t ->
+                    t.getTopicType().match(ComTopic.TopicType.USER) &&
+                            topicFilter.filter((ComTopic) t) &&
+                            textFilter.filter((ComTopic) t));
 
-        mTopics = new ArrayList<>(newTopics);
-        mTopicIndex = newTopicIndex;
+            final List<ComTopic<VxCard>> newTopicsList = new ArrayList<>(newTopics);
+            final HashMap<String, Integer> newTopicIndex = new HashMap<>(newTopicsList.size());
+            for (ComTopic t : newTopicsList) {
+                newTopicIndex.put(t.getName(), newTopicIndex.size());
+            }
 
-        activity.runOnUiThread(this::notifyDataSetChanged);
+            final TopicSnapshot newSnapshot = snapshot(newTopicsList);
+            final DiffUtil.DiffResult diffResult = DiffUtil.calculateDiff(
+                    new SnapshotDiffCallback(oldSnapshot, newSnapshot), false);
+
+            activity.runOnUiThread(() -> {
+                if (activity.isFinishing() || activity.isDestroyed() ||
+                        generation != mResetGeneration.get()) {
+                    return;
+                }
+
+                // No visible changes since last dispatch; keep adapter stable to avoid flicker.
+                if (oldSnapshot.equalsTo(newSnapshot)) {
+                    // Still update the backing list and index for consistency.
+                    mTopics = newTopicsList;
+                    mTopicIndex = newTopicIndex;
+                    mSnapshot = newSnapshot;
+                    return;
+                }
+
+                mTopics = newTopicsList;
+                mTopicIndex = newTopicIndex;
+                mSnapshot = newSnapshot;
+                diffResult.dispatchUpdatesTo(ChatsAdapter.this);
+            });
+        });
     }
 
     @NonNull
@@ -98,12 +137,10 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ViewHolder> 
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         if (holder.viewType == R.layout.contact) {
             if (mTopics.size() <= position) {
-                // Looks like there is a race condition here.
                 return;
             }
             ComTopic<VxCard> topic = mTopics.get(position);
             if (topic == null) {
-                // This should not happen.
                 return;
             }
             Storage.Message msg = Cache.getTinode().getLastMessage(topic.getName());
@@ -120,7 +157,10 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ViewHolder> 
         return StoredTopic.getId(mTopics.get(position));
     }
 
-    private String getItemKey(int position) {
+    private @Nullable String getItemKey(int position) {
+        if (mTopics == null || mTopics.size() <= position) {
+            return null;
+        }
         return mTopics.get(position).getName();
     }
 
@@ -138,7 +178,6 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ViewHolder> 
 
     @Override
     public int getItemCount() {
-        // If there are no contacts, the RV will show a single 'empty' item.
         int count = getActualItemCount();
         return count == 0 ? 1 : count;
     }
@@ -177,6 +216,138 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ViewHolder> 
                         .orElse(null) != null;
             }
         };
+    }
+
+    private static final class TopicSnapshot {
+        final String[] keys;
+        final long[] signatures;
+
+        TopicSnapshot(@NonNull String[] keys, @NonNull long[] signatures) {
+            this.keys = keys;
+            this.signatures = signatures;
+        }
+
+        static TopicSnapshot empty() {
+            return new TopicSnapshot(new String[] { EMPTY_KEY }, new long[] { 0L });
+        }
+
+        boolean equalsTo(@NonNull TopicSnapshot other) {
+            if (this.keys.length != other.keys.length) {
+                return false;
+            }
+            for (int i = 0; i < this.keys.length; i++) {
+                if (!Objects.equals(this.keys[i], other.keys[i])) {
+                    return false;
+                }
+                if (this.signatures[i] != other.signatures[i]) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+
+    private static final class SnapshotDiffCallback extends DiffUtil.Callback {
+        private final TopicSnapshot mOld;
+        private final TopicSnapshot mNew;
+
+        SnapshotDiffCallback(@NonNull TopicSnapshot oldSnapshot, @NonNull TopicSnapshot newSnapshot) {
+            mOld = oldSnapshot;
+            mNew = newSnapshot;
+        }
+
+        @Override
+        public int getOldListSize() {
+            return mOld.keys.length;
+        }
+
+        @Override
+        public int getNewListSize() {
+            return mNew.keys.length;
+        }
+
+        @Override
+        public boolean areItemsTheSame(int oldItemPosition, int newItemPosition) {
+            return Objects.equals(mOld.keys[oldItemPosition], mNew.keys[newItemPosition]);
+        }
+
+        @Override
+        public boolean areContentsTheSame(int oldItemPosition, int newItemPosition) {
+            return mOld.signatures[oldItemPosition] == mNew.signatures[newItemPosition];
+        }
+    }
+
+    private static TopicSnapshot snapshot(@NonNull List<ComTopic<VxCard>> topics) {
+        if (topics.isEmpty()) {
+            return TopicSnapshot.empty();
+        }
+
+        String[] keys = new String[topics.size()];
+        long[] signatures = new long[topics.size()];
+        for (int i = 0; i < topics.size(); i++) {
+            ComTopic<VxCard> topic = topics.get(i);
+            String topicName = topic.getName();
+            Storage.Message msg = Cache.getTinode().getLastMessage(topicName);
+            keys[i] = topicName;
+            signatures[i] = signature(topic, msg);
+        }
+        return new TopicSnapshot(keys, signatures);
+    }
+
+    private static long signature(@NonNull ComTopic<VxCard> topic, @Nullable Storage.Message msg) {
+        long sig = 17L;
+
+        sig = sig * 31 + topic.getUnreadCount();
+        sig = sig * 31 + (topic.getPinnedRank() & 0xFFFF);
+
+        sig = sig * 31 + (topic.isMuted() ? 1 : 0);
+        sig = sig * 31 + (topic.isArchived() ? 1 : 0);
+        sig = sig * 31 + (topic.isJoiner() ? 1 : 0);
+        sig = sig * 31 + (topic.isDeleted() ? 1 : 0);
+        sig = sig * 31 + (topic.getOnline() ? 1 : 0);
+
+        sig = sig * 31 + (topic.isChannel() ? 1 : 0);
+        sig = sig * 31 + (topic.isGrpType() ? 1 : 0);
+        sig = sig * 31 + (topic.isSlfType() ? 1 : 0);
+
+        sig = sig * 31 + (topic.isTrustedVerified() ? 1 : 0);
+        sig = sig * 31 + (topic.isTrustedStaff() ? 1 : 0);
+        sig = sig * 31 + (topic.isTrustedDanger() ? 1 : 0);
+
+        VxCard pub = topic.getPub();
+        sig = sig * 31 + safeHash(pub != null ? pub.fn : null);
+        sig = sig * 31 + avatarHash(pub);
+
+        if (msg != null && !msg.isDeleted()) {
+            Drafty content = msg.getContent();
+            sig = sig * 31 + msg.getDbId();
+            sig = sig * 31 + msg.getSeqId();
+            sig = sig * 31 + msg.getStatus();
+            sig = sig * 31 + (msg.isMine() ? 1 : 0);
+            sig = sig * 31 + (content != null ? safeHash(content.preview(MAX_MESSAGE_PREVIEW_LENGTH).toString()) : 0);
+            if (msg.isMine()) {
+                int seq = msg.getSeqId();
+                sig = sig * 31 + topic.msgReadCount(seq);
+                sig = sig * 31 + topic.msgRecvCount(seq);
+            }
+        } else {
+            sig = sig * 31 + safeHash(topic.getComment());
+        }
+
+        return sig;
+    }
+
+    private static int safeHash(@Nullable String value) {
+        return value != null ? value.hashCode() : 0;
+    }
+
+    private static int avatarHash(@Nullable VxCard pub) {
+        if (pub == null || pub.photo == null) {
+            return 0;
+        }
+        TheCard.Photo photo = pub.photo;
+        int dataLen = photo.data != null ? photo.data.length : 0;
+        return Objects.hash(photo.ref, photo.type, photo.size, dataLen);
     }
 
     interface ClickListener {

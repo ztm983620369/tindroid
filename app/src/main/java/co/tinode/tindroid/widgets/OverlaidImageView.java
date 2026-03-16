@@ -4,18 +4,21 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.RectF;
 import android.util.AttributeSet;
 
 import androidx.appcompat.widget.AppCompatImageView;
 import co.tinode.tindroid.R;
 
 /**
- * ImageView with a circular cutout for previewing avatars.
+ * ImageView with a rounded-rect cutout for previewing avatars.
  */
 public class OverlaidImageView extends AppCompatImageView {
     private final Paint mBackgroundPaint;
     private final Path mClipPath;
+    private final RectF mOverlayBounds;
     private boolean mShowOverlay = false;
+    private final float mCornerRadius;
 
     public OverlaidImageView(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -26,10 +29,12 @@ public class OverlaidImageView extends AppCompatImageView {
         mBackgroundPaint.setAlpha(0xCC);
 
         mClipPath = new Path();
+        mOverlayBounds = new RectF();
+        mCornerRadius = getResources().getDimension(R.dimen.avatar_corner_radius);
     }
 
     /**
-     * Show or hide circular image overlay.
+     * Show or hide avatar image overlay.
      *
      * @param on true to show, false to hide
      */
@@ -42,14 +47,15 @@ public class OverlaidImageView extends AppCompatImageView {
         // Draw image.
         super.onDraw(canvas);
 
-        // Draw background with circular cutout.
+        // Draw background with rounded-rect cutout.
         if (mShowOverlay) {
             final int width = getWidth();
             final int height = getHeight();
-            final int minDimension = Math.min(width, height);
 
             mClipPath.reset();
-            mClipPath.addCircle(width * 0.5f, height * 0.5f, minDimension * 0.5f, Path.Direction.CW);
+            mOverlayBounds.set(0, 0, width, height);
+            float radius = Math.min(mCornerRadius, Math.min(width, height) * 0.5f);
+            mClipPath.addRoundRect(mOverlayBounds, radius, radius, Path.Direction.CW);
             canvas.clipPath(mClipPath);
             canvas.drawPaint(mBackgroundPaint);
         }

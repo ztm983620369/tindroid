@@ -27,6 +27,11 @@
         <item name="android:listDivider">@drawable/list_divider</item>
     </style>
 
+    <style name="AppTheme.Message" parent="AppTheme">
+        <!-- Match MessagesFragment background to avoid a "white flash" on activity start. -->
+        <item name="android:windowBackground">@drawable/message_view_bkg</item>
+    </style>
+
     <style name="AppTheme.AppBarOverlay" parent="ThemeOverlay.AppCompat.ActionBar">
         <item name="android:textColorHint">@color/grey</item>
     </style>
@@ -110,7 +115,7 @@
 
     <style name="roundImageView" parent="">
         <item name="cornerFamily">rounded</item>
-        <item name="cornerSize">50%</item>
+        <item name="cornerSize">@dimen/avatar_corner_radius</item>
     </style>
 
     <style name="forwardToSheetDialog" parent="ThemeOverlay.MaterialComponents.BottomSheetDialog">

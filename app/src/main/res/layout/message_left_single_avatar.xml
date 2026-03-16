@@ -40,10 +40,15 @@
                 android:id="@+id/messageBubble"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:background="@drawable/bubble_l"
+                android:background="@drawable/chat_bubble_left"
                 android:backgroundTint="@color/colorMessageBubbleOther"
                 android:backgroundTintMode="multiply"
-                android:orientation="vertical">
+                android:elevation="@dimen/chat_bubble_elevation"
+                android:orientation="vertical"
+                android:paddingStart="@dimen/chat_bubble_tip_space"
+                android:paddingTop="@dimen/chat_bubble_padding_vertical"
+                android:paddingEnd="@dimen/chat_bubble_padding_horizontal"
+                android:paddingBottom="@dimen/chat_bubble_padding_vertical">
 
                 <co.tinode.tindroid.widgets.DynamicTextView
                     android:id="@+id/messageText"
@@ -52,9 +57,7 @@
                     android:clickable="false"
                     android:focusable="false"
                     android:maxWidth="270dp"
-                    android:minWidth="102dp"
-                    android:paddingStart="4dp"
-                    android:paddingEnd="4dp"
+                    android:minWidth="84dp"
                     android:textColor="?android:textColorPrimary"
                     tools:ignore="RtlSymmetry"
                     tools:text="Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua." />
@@ -83,10 +86,10 @@
                         android:layout_gravity="end"
                         android:clickable="false"
                         android:focusable="false"
-                        android:paddingLeft="4dp"
-                        android:paddingRight="4dp"
+                        android:paddingStart="2dp"
                         android:textColor="?android:attr/textColorSecondary"
                         android:textSize="11sp"
+                        android:visibility="gone"
                         tools:ignore="SmallSp"
                         tools:text="Jun 11 22:17" />
                 </LinearLayout>
@@ -97,7 +100,7 @@
                 android:id="@+id/userName"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:paddingStart="6dp"
+                android:paddingStart="10dp"
                 android:textColor="?android:textColorSecondary"
                 android:textSize="12sp"
                 tools:ignore="RtlSymmetry"
