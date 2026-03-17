@@ -1,7 +1,5 @@
 package co.tinode.tinodesdk;
 
-import android.text.TextUtils;
-
 import com.fasterxml.jackson.core.Base64Variants;
 
 import org.jetbrains.annotations.NotNull;
@@ -32,7 +30,7 @@ public final class PocketBaseAuth {
     @NotNull
     static Session authenticateWithPasswordBlocking(String hostName, boolean tls,
                                                     String identity, String password) throws Exception {
-        if (TextUtils.isEmpty(identity) || TextUtils.isEmpty(password)) {
+        if (isEmpty(identity) || isEmpty(password)) {
             throw new IllegalArgumentException("PocketBase identity and password are required");
         }
 
@@ -68,7 +66,7 @@ public final class PocketBaseAuth {
 
             JSONObject json = new JSONObject(body);
             String token = json.optString("token", null);
-            if (TextUtils.isEmpty(token)) {
+            if (isEmpty(token)) {
                 throw new IOException("PocketBase auth returned no token");
             }
             return new Session(token);
@@ -92,7 +90,7 @@ public final class PocketBaseAuth {
 
     @Nullable
     public static Credentials decodeAccountSecret(String encoded) {
-        if (TextUtils.isEmpty(encoded)) {
+        if (isEmpty(encoded)) {
             return null;
         }
 
@@ -117,7 +115,7 @@ public final class PocketBaseAuth {
 
     @NotNull
     private static String resolveBaseUrl(String hostName, boolean tls) throws URISyntaxException {
-        if (TextUtils.isEmpty(hostName)) {
+        if (isEmpty(hostName)) {
             throw new URISyntaxException("", "Missing Tinode host name");
         }
 
@@ -125,7 +123,7 @@ public final class PocketBaseAuth {
         URI tinodeUri = new URI(candidate);
 
         String host = tinodeUri.getHost();
-        if (TextUtils.isEmpty(host)) {
+        if (isEmpty(host)) {
             throw new URISyntaxException(hostName, "Invalid Tinode host name");
         }
 
@@ -155,16 +153,20 @@ public final class PocketBaseAuth {
 
     @NotNull
     private static String extractError(int code, String body) {
-        if (!TextUtils.isEmpty(body)) {
+        if (!isEmpty(body)) {
             try {
                 String message = new JSONObject(body).optString("message");
-                if (!TextUtils.isEmpty(message)) {
+                if (!isEmpty(message)) {
                     return "PocketBase auth failed (" + code + "): " + message;
                 }
             } catch (Exception ignored) {
             }
         }
         return "PocketBase auth failed (" + code + ")";
+    }
+
+    private static boolean isEmpty(@Nullable String value) {
+        return value == null || value.isEmpty();
     }
 
     static final class Session {

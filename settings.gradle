@@ -3,3 +3,5 @@ plugins {
 }
 include ':app', ':tinodesdk'
 include ':tinodesdk-jvm'
+include ':desktop'
+project(':desktop').projectDir = file('电脑版')
