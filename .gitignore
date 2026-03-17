@@ -42,5 +42,8 @@ tests/proguard-project.txt
 app/*.iml
 tinodesdk/*.iml
 
+# Codex backups
+.codex-backups/
+
 # Config file for Google services with secret keys
 app/google-services.json
