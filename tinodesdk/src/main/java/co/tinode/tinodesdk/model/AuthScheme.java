@@ -13,6 +13,7 @@ import java.util.StringTokenizer;
  */
 public record AuthScheme(String scheme, String secret) implements Serializable {
     public static final String LOGIN_BASIC = "basic";
+    public static final String LOGIN_PB = "pb";
     public static final String LOGIN_TOKEN = "token";
     public static final String LOGIN_RESET = "reset";
     public static final String LOGIN_CODE = "code";
@@ -28,7 +29,8 @@ public record AuthScheme(String scheme, String secret) implements Serializable {
             StringTokenizer st = new StringTokenizer(s, ":");
             if (st.countTokens() == 2) {
                 String scheme = st.nextToken();
-                if (scheme.contentEquals(LOGIN_BASIC) || scheme.contentEquals(LOGIN_TOKEN)) {
+                if (scheme.contentEquals(LOGIN_BASIC) || scheme.contentEquals(LOGIN_PB) ||
+                        scheme.contentEquals(LOGIN_TOKEN)) {
                     return new AuthScheme(scheme, st.nextToken());
                 }
             } else {
@@ -46,6 +48,13 @@ public record AuthScheme(String scheme, String secret) implements Serializable {
         }
         password = password == null ? "" : password;
         return Base64Variants.getDefaultVariant().encode((uname + ":" + password).getBytes(StandardCharsets.UTF_8));
+    }
+
+    public static String encodePocketBaseToken(String token) {
+        if (token == null) {
+            throw new IllegalArgumentException("illegal 'null' token");
+        }
+        return Base64Variants.getDefaultVariant().encode(token.getBytes(StandardCharsets.UTF_8));
     }
 
     public static String encodeResetSecret(String scheme, String method, String value) {
@@ -80,6 +89,10 @@ public record AuthScheme(String scheme, String secret) implements Serializable {
 
     public static AuthScheme basicInstance(String login, String password) {
         return new AuthScheme(LOGIN_BASIC, encodeBasicToken(login, password));
+    }
+
+    public static AuthScheme pbInstance(String token) {
+        return new AuthScheme(LOGIN_PB, encodePocketBaseToken(token));
     }
 
     public static AuthScheme tokenInstance(String secret) {

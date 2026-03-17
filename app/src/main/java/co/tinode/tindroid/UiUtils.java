@@ -431,6 +431,7 @@ public class UiUtils {
         final Account acc = Utils.createAccount(uid);
         // It's OK to call even if the account already exists.
         am.addAccountExplicitly(acc, secret, null);
+        am.setPassword(acc, secret);
         am.notifyAccountAuthenticated(acc);
         if (!TextUtils.isEmpty(token)) {
             am.setAuthToken(acc, Utils.TOKEN_TYPE, token);

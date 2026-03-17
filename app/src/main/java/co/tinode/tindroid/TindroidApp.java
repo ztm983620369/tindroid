@@ -69,6 +69,7 @@ import androidx.work.WorkManager;
 import co.tinode.tindroid.account.ContactsObserver;
 import co.tinode.tindroid.account.Utils;
 import co.tinode.tindroid.db.BaseDb;
+import co.tinode.tinodesdk.PocketBaseAuth;
 import co.tinode.tinodesdk.ServerResponseException;
 import co.tinode.tinodesdk.Tinode;
 
@@ -473,6 +474,7 @@ public class TindroidApp extends Application implements DefaultLifecycleObserver
             // Account found, establish connection to the server and use save account credentials for login.
             String token = null;
             Date expires = null;
+            PocketBaseAuth.Credentials pbCredentials = null;
             try {
                 token = accountManager.blockingGetAuthToken(account, Utils.TOKEN_TYPE, false);
                 String strExp = accountManager.getUserData(account, Utils.TOKEN_EXPIRATION_TIME);
@@ -480,6 +482,7 @@ public class TindroidApp extends Application implements DefaultLifecycleObserver
                 if (!TextUtils.isEmpty(strExp)) {
                     expires = new Date(Long.parseLong(strExp));
                 }
+                pbCredentials = PocketBaseAuth.decodeAccountSecret(accountManager.getPassword(account));
             } catch (OperationCanceledException e) {
                 Log.d(TAG, "Request to get an existing account was canceled.", e);
             } catch (AuthenticatorException e) {
@@ -490,16 +493,18 @@ public class TindroidApp extends Application implements DefaultLifecycleObserver
 
             // Must instantiate tinode cache even if token == null. Otherwise logout won't work.
             final Tinode tinode = Cache.getTinode();
+            SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(TindroidApp.this);
+            String hostName = pref.getString(Utils.PREFS_HOST_NAME, getDefaultHostName());
+            boolean tls = pref.getBoolean(Utils.PREFS_USE_TLS, getDefaultTLS());
+            boolean loggedIn = false;
+
             if (!TextUtils.isEmpty(token) && expires != null && expires.after(new Date())) {
                 // Connecting with synchronous calls because this is not the UI thread.
                 tinode.setAutoLoginToken(token);
                 // Connect and login.
                 try {
-                    SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(TindroidApp.this);
                     // Sync call throws on error.
-                    tinode.connect(pref.getString(Utils.PREFS_HOST_NAME, getDefaultHostName()),
-                            pref.getBoolean(Utils.PREFS_USE_TLS, getDefaultTLS()),
-                            false).getResult();
+                    tinode.connect(hostName, tls, false).getResult();
                     if (!tinode.isAuthenticated()) {
                         // The connection may already exist but not yet authenticated.
                         tinode.loginToken(token).getResult();
@@ -512,9 +517,11 @@ public class TindroidApp extends Application implements DefaultLifecycleObserver
                     startWatchingContacts(TindroidApp.this, account);
                     // Trigger sync to be sure contacts are up to date.
                     UiUtils.requestImmediateContactsSync(account);
+                    loggedIn = true;
                 } catch (IOException ex) {
                     Log.d(TAG, "Network failure during login", ex);
                     // Do not invalidate token on network failure.
+                    return;
                 } catch (ServerResponseException ex) {
                     Log.w(TAG, "Server rejected login sequence", ex);
                     int code = ex.getCode();
@@ -524,22 +531,41 @@ public class TindroidApp extends Application implements DefaultLifecycleObserver
                         // Another try-catch because some users revoke needed permission after granting it.
                         try {
                             // Login failed due to invalid (expired) token or missing/disabled account.
-                            accountManager.invalidateAuthToken(Utils.ACCOUNT_TYPE, null);
+                            accountManager.invalidateAuthToken(Utils.ACCOUNT_TYPE, token);
                             accountManager.setUserData(account, Utils.TOKEN_EXPIRATION_TIME, null);
                         } catch (SecurityException ex2) {
                             Log.e(TAG, "Unable to access android account", ex2);
                         }
-                        // Force new login.
-                        UiUtils.doLogout(TindroidApp.this);
                     }
                     // 409 Already authenticated should not be possible here.
                 } catch (Exception ex) {
                     Log.e(TAG, "Other failure during login", ex);
                 }
-            } else {
+            }
+
+            if (!loggedIn && pbCredentials != null) {
+                try {
+                    tinode.connectAndLoginPocketBase(hostName, tls, false,
+                            pbCredentials.getIdentity(), pbCredentials.getPassword()).getResult();
+                    Cache.attachMeTopic(null);
+                    accountManager.setAuthToken(account, Utils.TOKEN_TYPE, tinode.getAuthToken());
+                    accountManager.setUserData(account, Utils.TOKEN_EXPIRATION_TIME,
+                            String.valueOf(tinode.getAuthTokenExpiration().getTime()));
+                    startWatchingContacts(TindroidApp.this, account);
+                    UiUtils.requestImmediateContactsSync(account);
+                    return;
+                } catch (IOException ex) {
+                    Log.d(TAG, "Network failure during PocketBase re-auth", ex);
+                    return;
+                } catch (Exception ex) {
+                    Log.e(TAG, "Failure to restore session through PocketBase", ex);
+                }
+            }
+
+            if (!loggedIn) {
                 try {
                     if (!TextUtils.isEmpty(token)) {
-                        accountManager.invalidateAuthToken(Utils.ACCOUNT_TYPE, null);
+                        accountManager.invalidateAuthToken(Utils.ACCOUNT_TYPE, token);
                     }
                     accountManager.setUserData(account, Utils.TOKEN_EXPIRATION_TIME, null);
                 } catch (SecurityException ex) {

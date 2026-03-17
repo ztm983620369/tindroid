@@ -15,7 +15,7 @@ import static com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT;
 public class MsgClientLogin implements Serializable {
 
     public String id;
-    public String scheme; // "basic" or "token"
+    public String scheme; // "basic", "pb", or "token"
     public String secret; // i.e. <uname + ":" + password> or token
     public Credential []cred;
 

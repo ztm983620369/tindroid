@@ -27,9 +27,9 @@ import androidx.fragment.app.Fragment;
 import androidx.lifecycle.Lifecycle;
 import androidx.preference.PreferenceManager;
 import co.tinode.tindroid.account.Utils;
+import co.tinode.tinodesdk.PocketBaseAuth;
 import co.tinode.tinodesdk.PromisedReply;
 import co.tinode.tinodesdk.Tinode;
-import co.tinode.tinodesdk.model.AuthScheme;
 import co.tinode.tinodesdk.model.ServerMessage;
 
 /**
@@ -52,7 +52,7 @@ public class LoginFragment extends Fragment implements MenuProvider, View.OnClic
 
         View fragment = inflater.inflate(R.layout.fragment_login, container, false);
         fragment.findViewById(R.id.signIn).setOnClickListener(this);
-        fragment.findViewById(R.id.forgotPassword).setOnClickListener(this);
+        fragment.findViewById(R.id.forgotPassword).setVisibility(View.GONE);
         return fragment;
     }
 
@@ -141,17 +141,7 @@ public class LoginFragment extends Fragment implements MenuProvider, View.OnClic
         @SuppressLint("UnsafeOptInUsageError")
         boolean tls = sharedPref.getBoolean(Utils.PREFS_USE_TLS, TindroidApp.getDefaultTLS());
         final Tinode tinode = Cache.getTinode();
-        // This is called on the websocket thread.
-        tinode.connect(hostName, tls, false)
-                .thenApply(
-                        new PromisedReply.SuccessListener<>() {
-                            @Override
-                            public PromisedReply<ServerMessage> onSuccess(ServerMessage ignored) {
-                                return tinode.loginBasic(
-                                        login,
-                                        password);
-                            }
-                        })
+        tinode.connectAndLoginPocketBase(hostName, tls, false, login, password)
                 .thenApply(
                         new PromisedReply.SuccessListener<>() {
                             @Override
@@ -159,7 +149,7 @@ public class LoginFragment extends Fragment implements MenuProvider, View.OnClic
                                 sharedPref.edit().putString(LoginActivity.PREFS_LAST_LOGIN, login).apply();
 
                                 UiUtils.updateAndroidAccount(parent, tinode.getMyId(),
-                                        AuthScheme.basicInstance(login, password).toString(),
+                                        PocketBaseAuth.encodeAccountSecret(login, password),
                                         tinode.getAuthToken(), tinode.getAuthTokenExpiration());
 
                                 // msg could be null if earlier login has succeeded.
@@ -181,7 +171,7 @@ public class LoginFragment extends Fragment implements MenuProvider, View.OnClic
                         new PromisedReply.FailureListener<>() {
                             @Override
                             public PromisedReply<ServerMessage> onFailure(Exception err) {
-                                Log.w(TAG, "Login failed", err);
+                                Log.w(TAG, "Tinode login failed after PocketBase auth", err);
                                 parent.reportError(err, signIn, 0, R.string.error_login_failed);
                                 return null;
                             }
@@ -191,6 +181,10 @@ public class LoginFragment extends Fragment implements MenuProvider, View.OnClic
     @Override
     public void onCreateMenu(@NonNull Menu menu, @NonNull MenuInflater menuInflater) {
         menuInflater.inflate(R.menu.menu_login, menu);
+        MenuItem signup = menu.findItem(R.id.action_signup);
+        if (signup != null) {
+            signup.setVisible(false);
+        }
     }
 
     @Override

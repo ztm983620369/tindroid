@@ -1628,7 +1628,80 @@ public class Tinode {
     }
 
     /**
-     * Send a basic login packet to the server. A connection must be established prior to calling
+     * Send a PocketBase-backed login packet to the server. A connection must be established prior to calling
+     * this method. Success or failure will be reported through {@link EventListener#onLogin(int, String)}
+     *
+     * @param token PocketBase JWT
+     * @param creds validation credentials.
+     * @return PromisedReply of the reply ctrl message
+     */
+    public PromisedReply<ServerMessage> loginPocketBase(String token, Credential[] creds) {
+        return login(AuthScheme.LOGIN_PB, AuthScheme.encodePocketBaseToken(token), creds);
+    }
+
+    /**
+     * Send a PocketBase-backed login packet to the server. A connection must be established prior to calling
+     * this method. Success or failure will be reported through {@link EventListener#onLogin(int, String)}
+     *
+     * @param token PocketBase JWT
+     * @return PromisedReply of the reply ctrl message
+     */
+    public PromisedReply<ServerMessage> loginPocketBase(String token) {
+        return loginPocketBase(token, null);
+    }
+
+    /**
+     * Authenticate against PocketBase using password, then connect and log in to Tinode with scheme=pb.
+     *
+     * @param hostName Tinode host name, for example "119.45.226.7:6060"
+     * @param tls use TLS for both PocketBase and Tinode connections.
+     * @param background true if this is a background connection.
+     * @param identity PocketBase login identity, usually email.
+     * @param password PocketBase password.
+     * @param creds optional Tinode credential confirmations.
+     * @return PromisedReply of the final Tinode login ctrl message.
+     */
+    public PromisedReply<ServerMessage> connectAndLoginPocketBase(@Nullable String hostName, boolean tls,
+                                                                  boolean background, @NotNull String identity,
+                                                                  @NotNull String password, Credential[] creds) {
+        PromisedReply<ServerMessage> completion = new PromisedReply<>();
+        new Thread(() -> {
+            try {
+                PocketBaseAuth.Session session =
+                        PocketBaseAuth.authenticateWithPasswordBlocking(hostName, tls, identity, password);
+                ServerMessage msg = connect(hostName, tls, background).getResult();
+                if (!isAuthenticated()) {
+                    msg = loginPocketBase(session.getToken(), creds).getResult();
+                }
+                completion.resolve(msg);
+            } catch (Exception err) {
+                try {
+                    completion.reject(err);
+                } catch (Exception ignored) {
+                }
+            }
+        }, "TinodePbLogin").start();
+        return completion;
+    }
+
+    /**
+     * Authenticate against PocketBase using password, then connect and log in to Tinode with scheme=pb.
+     *
+     * @param hostName Tinode host name, for example "119.45.226.7:6060"
+     * @param tls use TLS for both PocketBase and Tinode connections.
+     * @param background true if this is a background connection.
+     * @param identity PocketBase login identity, usually email.
+     * @param password PocketBase password.
+     * @return PromisedReply of the final Tinode login ctrl message.
+     */
+    public PromisedReply<ServerMessage> connectAndLoginPocketBase(@Nullable String hostName, boolean tls,
+                                                                  boolean background, @NotNull String identity,
+                                                                  @NotNull String password) {
+        return connectAndLoginPocketBase(hostName, tls, background, identity, password, null);
+    }
+
+    /**
+     * Send a token login packet to the server. A connection must be established prior to calling
      * this method. Success or failure will be reported through {@link EventListener#onLogin(int, String)}
      *
      * @param token server-provided security token
