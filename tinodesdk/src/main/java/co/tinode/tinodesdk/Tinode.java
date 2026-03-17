@@ -1,7 +1,5 @@
 package co.tinode.tinodesdk;
 
-import android.util.Log;
-
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonParser;
@@ -46,6 +44,7 @@ import java.util.TimerTask;
 import java.util.Vector;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -87,7 +86,41 @@ public class Tinode {
 
     private static final String PROTOVERSION = "0";
     private static final String VERSION = "0.25";
-    private static final String LIBRARY = "tindroid/" + BuildConfig.VERSION_NAME;
+    private static final String LIBRARY = "tindroid/" + getLibraryVersionName();
+    private static final AtomicReference<String> sVersionName = new AtomicReference<>();
+
+    private static String getLibraryVersionName() {
+        String cached = sVersionName.get();
+        if (cached != null) {
+            return cached;
+        }
+
+        String versionName = null;
+        // On Android, BuildConfig is generated. Avoid compile-time dependency to keep this SDK JVM-friendly.
+        try {
+            Class<?> buildConfig = Class.forName("co.tinode.tinodesdk.BuildConfig");
+            Object value = buildConfig.getField("VERSION_NAME").get(null);
+            if (value instanceof String) {
+                versionName = (String) value;
+            }
+        } catch (Exception ignored) {
+        }
+
+        if (versionName == null || versionName.isEmpty()) {
+            // On JVM, prefer jar manifest Implementation-Version.
+            Package pkg = Tinode.class.getPackage();
+            if (pkg != null) {
+                versionName = pkg.getImplementationVersion();
+            }
+        }
+
+        if (versionName == null || versionName.isEmpty()) {
+            versionName = "0";
+        }
+
+        sVersionName.compareAndSet(null, versionName);
+        return sVersionName.get();
+    }
 
     public static final String USER_NEW = "new";
     public static final String TOPIC_NEW = "new";
@@ -487,7 +520,7 @@ public class Tinode {
         try {
             return sJsonMapper.readValue(input, sTypeFactory.constructFromCanonical(canonicalName));
         } catch (Error | Exception e) {
-            Log.w(TAG, "Failed to deserialize saved '" + input +
+            TinodeLog.w(TAG, "Failed to deserialize saved '" + input +
                     "' into '" + canonicalName + "'", e);
             return null;
         }
@@ -831,7 +864,7 @@ public class Tinode {
     }
 
     private void handleDisconnect(boolean byServer, int code, String reason) {
-        Log.d(TAG, "Disconnected for '" + reason + "' (code: " + code + ", remote: " +
+        TinodeLog.d(TAG, "Disconnected for '" + reason + "' (code: " + code + ", remote: " +
                 byServer + ");");
 
         mConnAuth = false;
@@ -874,7 +907,7 @@ public class Tinode {
         if (message == null || message.isEmpty())
             return;
 
-        Log.d(TAG, "in: " + message);
+        TinodeLog.d(TAG, "in: " + message);
 
         mNotifier.onRawMessage(message);
 
@@ -885,7 +918,7 @@ public class Tinode {
 
         ServerMessage pkt = parseServerMessageFromJson(message);
         if (pkt == null) {
-            Log.w(TAG, "Failed to parse packet");
+            TinodeLog.w(TAG, "Failed to parse packet");
             return;
         }
 
@@ -987,7 +1020,7 @@ public class Tinode {
      */
     public void oobNotification(Map<String, String> data, String authToken, boolean keepConnection) {
         // This log entry is permanent, not just temporary for debugging.
-        Log.d(TAG, "oob: " + data);
+        TinodeLog.d(TAG, "oob: " + data);
 
         String what = data.get("what");
         String topicName = data.get("topic");
@@ -1463,10 +1496,10 @@ public class Tinode {
                                     if (val != null) {
                                         mServerParams.put(key, val.longValue());
                                     } else {
-                                        Log.w(TAG, "Server limit '" + key + "' is missing");
+                                        TinodeLog.w(TAG, "Server limit '" + key + "' is missing");
                                     }
                                 } catch (ClassCastException ex) {
-                                    Log.e(TAG, "Failed to obtain server limit '" + key + "'", ex);
+                                    TinodeLog.e(TAG, "Failed to obtain server limit '" + key + "'", ex);
                                 }
                             }
                         }
@@ -1521,7 +1554,7 @@ public class Tinode {
                     try {
                         loginSuccessful(pkt.ctrl);
                     } catch (Exception ex) {
-                        Log.w(TAG, "Failed to parse server response", ex);
+                        TinodeLog.w(TAG, "Failed to parse server response", ex);
                     }
                     return null;
                 }
@@ -2095,7 +2128,7 @@ public class Tinode {
         if (mConnection == null || !mConnection.isConnected()) {
             throw new NotConnectedException("No connection");
         }
-        Log.d(TAG, "out: " + message);
+        TinodeLog.d(TAG, "out: " + message);
         mConnection.send(message);
     }
 
@@ -2124,7 +2157,7 @@ public class Tinode {
             try {
                 future.reject(ex1);
             } catch (Exception ex2) {
-                Log.d(TAG, "Exception while rejecting the promise", ex2);
+                TinodeLog.d(TAG, "Exception while rejecting the promise", ex2);
             }
         }
         return future;
@@ -2481,20 +2514,20 @@ public class Tinode {
                                 msg.meta = mapper.readValue(node.traverse(),
                                         getTypeOfMetaPacket(node.get("topic").asText()));
                             } else {
-                                Log.w(TAG, "Failed to parse {meta}: missing topic name");
+                                TinodeLog.w(TAG, "Failed to parse {meta}: missing topic name");
                             }
                             break;
                         default:  // Unrecognized field, ignore
-                            Log.w(TAG, "Unknown field in packet: '" + name + "'");
+                            TinodeLog.w(TAG, "Unknown field in packet: '" + name + "'");
                             break;
                     }
                 } catch (Exception e) {
-                    Log.w(TAG, "Failed to deserialize network message", e);
+                    TinodeLog.w(TAG, "Failed to deserialize network message", e);
                 }
             }
             parser.close(); // important to close both parser and underlying reader
         } catch (IOException e) {
-            Log.w(TAG, "Failed to parse message", e);
+            TinodeLog.w(TAG, "Failed to parse message", e);
         }
 
         return msg.isValid() ? msg : null;
@@ -2889,7 +2922,7 @@ public class Tinode {
             try {
                 dispatchPacket(message);
             } catch (Exception ex) {
-                Log.w(TAG, "Exception in dispatchPacket: ", ex);
+                TinodeLog.w(TAG, "Exception in dispatchPacket: ", ex);
             }
         }
 
@@ -2949,35 +2982,35 @@ public class Tinode {
         @Override
         public Object handleUnexpectedToken(DeserializationContext ctxt, JavaType targetType, JsonToken t,
                                             JsonParser p, String failureMsg) {
-            Log.w(TAG, "Unexpected token:" + t.name());
+            TinodeLog.w(TAG, "Unexpected token:" + t.name());
             return null;
         }
 
         @Override
         public Object handleWeirdKey(DeserializationContext ctxt, Class<?> rawKeyType,
                                      String keyValue, String failureMsg) {
-            Log.w(TAG, "Weird key: '" + keyValue + "'");
+            TinodeLog.w(TAG, "Weird key: '" + keyValue + "'");
             return  null;
         }
 
         @Override
         public Object handleWeirdNativeValue(DeserializationContext ctxt, JavaType targetType,
                                              Object valueToConvert, JsonParser p) {
-            Log.w(TAG, "Weird native value: '" + valueToConvert + "'");
+            TinodeLog.w(TAG, "Weird native value: '" + valueToConvert + "'");
             return  null;
         }
 
         @Override
         public Object handleWeirdNumberValue(DeserializationContext ctxt, Class<?> targetType,
                                              Number valueToConvert, String failureMsg) {
-            Log.w(TAG, "Weird number value: '" + valueToConvert + "'");
+            TinodeLog.w(TAG, "Weird number value: '" + valueToConvert + "'");
             return  null;
         }
 
         @Override
         public Object handleWeirdStringValue(DeserializationContext ctxt, Class<?> targetType,
                                              String valueToConvert, String failureMsg) {
-            Log.w(TAG, "Weird string value: '" + valueToConvert + "'");
+            TinodeLog.w(TAG, "Weird string value: '" + valueToConvert + "'");
             return  null;
         }
     }

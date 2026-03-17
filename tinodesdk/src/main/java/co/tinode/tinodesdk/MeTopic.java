@@ -1,7 +1,5 @@
 package co.tinode.tinodesdk;
 
-import android.util.Log;
-
 import com.fasterxml.jackson.databind.JavaType;
 
 import org.jetbrains.annotations.NotNull;
@@ -398,7 +396,7 @@ public class MeTopic<DP> extends Topic<DP,PrivateType,DP,PrivateType> {
             topic = mTinode.newTopic(sub);
             topic.persist();
         } else {
-            Log.w(TAG, "Request to delete an unknown topic: " + sub.topic);
+            TinodeLog.w(TAG, "Request to delete an unknown topic: " + sub.topic);
         }
 
         if (topic != null) {
@@ -596,7 +594,7 @@ public class MeTopic<DP> extends Topic<DP,PrivateType,DP,PrivateType> {
                         if (acs.isModeDefined()) {
                             getMeta(getMetaGetBuilder().withSub(pres.src).build());
                         } else {
-                            Log.d(TAG, "Unexpected access mode in presence: '" + pres.dacs.want + "'/'" + pres.dacs.given + "'");
+                            TinodeLog.d(TAG, "Unexpected access mode in presence: '" + pres.dacs.want + "'/'" + pres.dacs.given + "'");
                         }
                         break;
                     case TAGS:
@@ -604,7 +602,7 @@ public class MeTopic<DP> extends Topic<DP,PrivateType,DP,PrivateType> {
                         getMeta(getMetaGetBuilder().withTags().build());
                         break;
                     default:
-                        Log.d(TAG, "Topic not found in me.routePres: " + pres.what + " in " + pres.src);
+                        TinodeLog.d(TAG, "Topic not found in me.routePres: " + pres.what + " in " + pres.src);
                         break;
                 }
             }

@@ -1,7 +1,5 @@
 package co.tinode.tinodesdk;
 
-import android.util.Log;
-
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.drafts.Draft_6455;
 import org.java_websocket.extensions.permessage_deflate.PerMessageDeflateExtension;
@@ -101,7 +99,7 @@ public class Connection extends WebSocketClient {
                     endpoint.getQuery(),
                     endpoint.getFragment());
         } catch (URISyntaxException e) {
-            Log.w(TAG, "Invalid endpoint URI", e);
+            TinodeLog.w(TAG, "Invalid endpoint URI", e);
         }
 
         return endpoint;
@@ -127,7 +125,7 @@ public class Connection extends WebSocketClient {
                     }
                 }
             } catch (Exception ex) {
-                Log.w(TAG, "WS connection failed", ex);
+                TinodeLog.w(TAG, "WS connection failed", ex);
                 if (mListener != null) {
                     mListener.onError(Connection.this, ex);
                 }
@@ -248,7 +246,7 @@ public class Connection extends WebSocketClient {
     @Override
     public void onMessage(ByteBuffer blob) {
         // do nothing, server does not send binary frames
-        Log.w(TAG, "binary message received (should not happen)");
+        TinodeLog.w(TAG, "binary message received (should not happen)");
     }
 
     @Override
@@ -288,7 +286,7 @@ public class Connection extends WebSocketClient {
 
     @Override
     public void onError(Exception ex) {
-        Log.w(TAG, "Websocket error", ex);
+        TinodeLog.w(TAG, "Websocket error", ex);
 
         if (mListener != null) {
             mListener.onError(this, ex);

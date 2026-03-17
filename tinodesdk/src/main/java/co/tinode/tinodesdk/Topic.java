@@ -1,7 +1,5 @@
 package co.tinode.tinodesdk;
 
-import android.util.Log;
-
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.type.TypeFactory;
 
@@ -635,7 +633,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
                             }
                     );
                 } catch (Exception ex) {
-                    Log.w(TAG, "Failed to sync data", ex);
+                    TinodeLog.w(TAG, "Failed to sync data", ex);
                 }
             }
         }
@@ -1340,7 +1338,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
                 last = publish(msg.getContent(), msg.getHead(), msgId);
             }
         } catch (IOException ex) {
-            Log.e(TAG, "Failed to close message iterator", ex);
+            TinodeLog.e(TAG, "Failed to close message iterator", ex);
         }
         return last;
     }
@@ -2299,7 +2297,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
                             sub.pub = user.pub;
                         }
                     } else {
-                        Log.w(TAG, "Invalid access mode update '" + pres.dacs.toString() + "'");
+                        TinodeLog.w(TAG, "Invalid access mode update '" + pres.dacs.toString() + "'");
                     }
                 } else {
                     // Update to an existing subscription.
@@ -2320,7 +2318,7 @@ public class Topic<DP, DR, SP, SR> implements LocalData, Comparable<Topic> {
                 getMeta(getMetaGetBuilder().withAux().build());
                 break;
             default:
-                Log.d(TAG, "Unhandled presence update '" + pres.what + "' in '" + getName() + "'");
+                TinodeLog.d(TAG, "Unhandled presence update '" + pres.what + "' in '" + getName() + "'");
         }
 
         mNotifier.notifyPres(pres);
