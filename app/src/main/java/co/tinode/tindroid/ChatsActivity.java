@@ -429,7 +429,11 @@ public class ChatsActivity extends BaseActivity
         @Override
         public void onLogin(int code, String txt) {
             super.onLogin(code, txt);
-            UiUtils.attachMeTopic(ChatsActivity.this, mMeTopicListener);
+            if (code >= 200 && code < 300) {
+                UiUtils.attachMeTopic(ChatsActivity.this, mMeTopicListener);
+            } else if (code == 401 || code == 403 || code == 404) {
+                UiUtils.doLogout(ChatsActivity.this);
+            }
         }
 
         @Override

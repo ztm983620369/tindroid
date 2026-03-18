@@ -26,6 +26,8 @@
     <string name="sign_up">Sign Up</string>
     <string name="login_new">Login</string>
     <string name="password_new">Password</string>
+    <string name="password_confirm">Confirm password</string>
+    <string name="password_mismatch">Passwords do not match</string>
     <string name="full_name">Full name, e.g. John Doe</string>
     <string name="tinode_logo" translatable="false">Tinode Logo</string>
     <string name="action_cancel">Cancel</string>
@@ -158,6 +160,25 @@
     <string name="hint_add_by_id">Enter ID of a group or user</string>
     <string name="hint_search_tags">Search by tags</string>
     <string name="topic_not_found_or_invalid">Conversation not found or invalid</string>
+    <string name="runtime_state_readonly_message">You can no longer send messages in this conversation.</string>
+    <string name="runtime_state_muted_message">Messaging is temporarily disabled for this conversation.</string>
+    <string name="runtime_state_removed_title">Removed From Conversation</string>
+    <string name="runtime_state_removed_message">You were removed from this conversation.</string>
+    <string name="runtime_state_removed_history_message">You were removed from this conversation. Cached history is still available.</string>
+    <string name="runtime_state_deleted_title">Conversation Deleted</string>
+    <string name="runtime_state_deleted_message">This conversation was deleted on the server.</string>
+    <string name="runtime_state_deleted_history_message">This conversation was deleted. Cached history is still available.</string>
+    <string name="runtime_state_temp_unavailable_title">Conversation Unavailable</string>
+    <string name="runtime_state_temp_unavailable_message">This conversation is temporarily unavailable. Please try again.</string>
+    <string name="runtime_state_topic_missing_message">This conversation is no longer available on this device.</string>
+    <string name="runtime_state_account_blocked_title">Account Restricted</string>
+    <string name="runtime_state_account_blocked_message">This account is no longer allowed to access messaging.</string>
+    <string name="runtime_state_session_kicked_title">Session Ended</string>
+    <string name="runtime_state_session_kicked_message">This device was signed out by the server.</string>
+    <string name="runtime_action_back_to_chats">Back To Chats</string>
+    <string name="runtime_action_retry">Retry</string>
+    <string name="runtime_action_relogin">Re-login</string>
+    <string name="runtime_action_view_history">View History</string>
     <string name="sending_disabled">Not available</string>
     <string name="download_title">Tinode download</string>
     <string name="some_permissions_missing">Please grant all requested permissions.</string>

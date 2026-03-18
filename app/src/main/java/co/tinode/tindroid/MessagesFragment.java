@@ -1025,11 +1025,16 @@ public class MessagesFragment extends Fragment implements MenuProvider {
         if (mTopic == null) {
             // Default view when the topic is not available.
             activity.findViewById(R.id.notReadable).setVisibility(View.VISIBLE);
-            activity.findViewById(R.id.notReadableNote).setVisibility(View.VISIBLE);
+            TextView notReadableNote = activity.findViewById(R.id.notReadableNote);
+            notReadableNote.setVisibility(View.VISIBLE);
+            notReadableNote.setText(activity.getRuntimeReadNotice());
+            TextView sendDisabled = activity.findViewById(R.id.sendMessageDisabled);
+            sendDisabled.setText(activity.getRuntimeComposerNotice());
             if (mComposer != null) {
                 mComposer.dispatch(ComposerEvent.topicStateChanged(false, false, false));
             }
             UiUtils.setupToolbar(activity, null, mTopicName, false, null, false, 0);
+            activity.applyRuntimeStateToToolbar();
             logComposerState("updateFormValues topicNull", activity.findViewById(R.id.sendMessageDisabled));
             return;
         }
@@ -1065,8 +1070,9 @@ public class MessagesFragment extends Fragment implements MenuProvider {
             activity.findViewById(R.id.notReadable).setVisibility(View.GONE);
         } else {
             activity.findViewById(R.id.notReadable).setVisibility(View.VISIBLE);
-            activity.findViewById(R.id.notReadableNote).setVisibility(
-                    acs.isReader(Acs.Side.GIVEN) ? View.GONE : View.VISIBLE);
+            TextView notReadableNote = activity.findViewById(R.id.notReadableNote);
+            notReadableNote.setVisibility(acs.isReader(Acs.Side.GIVEN) ? View.GONE : View.VISIBLE);
+            notReadableNote.setText(activity.getRuntimeReadNotice());
         }
 
         boolean canWrite = mTopic.isWriter() && !mTopic.isBlocked() && !mTopic.isDeleted();
@@ -1080,6 +1086,8 @@ public class MessagesFragment extends Fragment implements MenuProvider {
 
         if (mComposer != null) {
             EditText input = activity.findViewById(R.id.editMessage);
+            TextView sendDisabled = activity.findViewById(R.id.sendMessageDisabled);
+            sendDisabled.setText(activity.getRuntimeComposerNotice());
             boolean consumedDraft = mComposer.applyTopicPresentation(canWrite, peerDisabled, mMessageToSend, input);
             if (consumedDraft) {
                 mMessageToSend = null;
@@ -1396,6 +1404,9 @@ public class MessagesFragment extends Fragment implements MenuProvider {
             return true;
         } else if (id == R.id.action_leave || id == R.id.action_delete) {
             if (mTopic.isDeleted()) {
+                ((MessageActivity) activity).markTopicLocalDetach(
+                        id == R.id.action_delete ? MessageActivity.LocalDetachReason.USER_DELETE :
+                                MessageActivity.LocalDetachReason.USER_LEAVE);
                 mTopic.delete(true);
                 Intent intent = new Intent(activity, ChatsActivity.class);
                 intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
@@ -1548,7 +1559,11 @@ public class MessagesFragment extends Fragment implements MenuProvider {
                 R.string.confirm_leave_topic);
 
         confirmBuilder.setPositiveButton(android.R.string.ok, (dialog, which) ->
-                mTopic.delete(true).thenApply(new PromisedReply.SuccessListener<>() {
+                {
+                    ((MessageActivity) activity).markTopicLocalDetach(
+                            del ? MessageActivity.LocalDetachReason.USER_DELETE :
+                                    MessageActivity.LocalDetachReason.USER_LEAVE);
+                    mTopic.delete(true).thenApply(new PromisedReply.SuccessListener<>() {
                     @Override
                     public PromisedReply<ServerMessage> onSuccess(ServerMessage result) {
                         Intent intent = new Intent(activity, ChatsActivity.class);
@@ -1557,7 +1572,8 @@ public class MessagesFragment extends Fragment implements MenuProvider {
                         activity.finish();
                         return null;
                     }
-                }, mFailureListener));
+                }, mFailureListener);
+                });
         confirmBuilder.show();
     }
 
@@ -1595,6 +1611,7 @@ public class MessagesFragment extends Fragment implements MenuProvider {
                     });
                 }
             } else if (id == R.id.buttonIgnore) {
+                ((MessageActivity) activity).markTopicLocalDetach(MessageActivity.LocalDetachReason.USER_LEAVE);
                 response = mTopic.delete(true);
             } else if (id == R.id.buttonBlock) {
                 mTopic.updateMode(null, "-JP");

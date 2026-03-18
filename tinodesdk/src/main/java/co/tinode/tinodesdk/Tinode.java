@@ -86,8 +86,8 @@ public class Tinode {
 
     private static final String PROTOVERSION = "0";
     private static final String VERSION = "0.25";
-    private static final String LIBRARY = "tindroid/" + getLibraryVersionName();
     private static final AtomicReference<String> sVersionName = new AtomicReference<>();
+    private static final String LIBRARY = "tindroid/" + getLibraryVersionName();
 
     private static String getLibraryVersionName() {
         String cached = sVersionName.get();
@@ -1698,6 +1698,41 @@ public class Tinode {
                                                                   boolean background, @NotNull String identity,
                                                                   @NotNull String password) {
         return connectAndLoginPocketBase(hostName, tls, background, identity, password, null);
+    }
+
+    /**
+     * Create a PocketBase user record, then authenticate against PocketBase using password,
+     * then connect and log in to Tinode with scheme=pb.
+     *
+     * @param hostName Tinode host name, for example "119.45.226.7:6060"
+     * @param tls use TLS for both PocketBase and Tinode connections.
+     * @param background true if this is a background connection.
+     * @param request PocketBase user creation request.
+     * @return PromisedReply of the final Tinode login ctrl message.
+     */
+    public PromisedReply<ServerMessage> signUpAndLoginPocketBase(@Nullable String hostName, boolean tls,
+                                                                 boolean background,
+                                                                 @NotNull PocketBaseAuth.SignUpRequest request) {
+        PromisedReply<ServerMessage> completion = new PromisedReply<>();
+        new Thread(() -> {
+            try {
+                PocketBaseAuth.createUserBlocking(hostName, tls, request);
+                PocketBaseAuth.Session session = PocketBaseAuth.authenticateWithPasswordBlocking(
+                        hostName, tls, request.email, request.password);
+
+                ServerMessage msg = connect(hostName, tls, background).getResult();
+                if (!isAuthenticated()) {
+                    msg = loginPocketBase(session.getToken()).getResult();
+                }
+                completion.resolve(msg);
+            } catch (Exception err) {
+                try {
+                    completion.reject(err);
+                } catch (Exception ignored) {
+                }
+            }
+        }, "TinodePbSignup").start();
+        return completion;
     }
 
     /**

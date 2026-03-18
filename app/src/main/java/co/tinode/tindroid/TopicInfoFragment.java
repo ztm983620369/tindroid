@@ -200,7 +200,7 @@ public class TopicInfoFragment extends Fragment implements MenuProvider, Message
         mTopic = (ComTopic<VxCard>) Cache.getTinode().getTopic(name);
         if (mTopic == null) {
             Log.d(TAG, "TopicInfo resumed with null topic.");
-            activity.finish();
+            ((MessageActivity) activity).handleMissingTopicFromChild();
             return;
         }
 
@@ -378,7 +378,12 @@ public class TopicInfoFragment extends Fragment implements MenuProvider, Message
 
     public void notifyDataSetChanged() {
         if (mTopic == null) {
-            Log.w(TAG, "notifyDataSetChanged called with null topic");
+            FragmentActivity activity = getActivity();
+            if (activity instanceof MessageActivity) {
+                ((MessageActivity) activity).handleMissingTopicFromChild();
+            } else {
+                Log.w(TAG, "notifyDataSetChanged called with null topic");
+            }
             return;
         }
 

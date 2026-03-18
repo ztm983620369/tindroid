@@ -65,6 +65,7 @@ import co.tinode.tindroid.db.BaseDb;
 import co.tinode.tindroid.media.VxCard;
 import co.tinode.tinodesdk.AlreadySubscribedException;
 import co.tinode.tinodesdk.ComTopic;
+import co.tinode.tinodesdk.MeTopic;
 import co.tinode.tinodesdk.NotConnectedException;
 import co.tinode.tinodesdk.PromisedReply;
 import co.tinode.tinodesdk.ServerResponseException;
@@ -106,9 +107,57 @@ public class MessageActivity extends BaseActivity
     private static final int MESSAGES_TO_LOAD = 24;
 
     private static final int READ_DELAY = 1000;
+    private static final String STATE_ARG_KIND = "state_kind";
+    private static final String STATE_ARG_TITLE = "state_title";
+    private static final String STATE_ARG_MESSAGE = "state_message";
+    private static final String STATE_ARG_PRIMARY_LABEL = "state_primary_label";
+    private static final String STATE_ARG_PRIMARY_ACTION = "state_primary_action";
+    private static final String STATE_ARG_SECONDARY_LABEL = "state_secondary_label";
+    private static final String STATE_ARG_SECONDARY_ACTION = "state_secondary_action";
+    private static final String STATE_ACTION_BACK = "back";
+    private static final String STATE_ACTION_RETRY = "retry";
+    private static final String STATE_ACTION_RELOGIN = "relogin";
+    private static final String STATE_ACTION_HISTORY = "history";
 
     // How long a typing indicator should play its animation, milliseconds.
     private static final int TYPING_INDICATOR_DURATION = 4000;
+
+    enum TopicRuntimeStateKind {
+        LIVE,
+        READONLY,
+        MUTED,
+        REMOVED,
+        EVICTED,
+        DELETED,
+        TEMP_UNAVAILABLE,
+        ACCOUNT_BLOCKED,
+        SESSION_KICKED
+    }
+
+    static final class TopicRuntimeState {
+        final TopicRuntimeStateKind kind;
+        final int code;
+        @Nullable final String reason;
+        final boolean keepHistory;
+        final boolean allowRetry;
+
+        TopicRuntimeState(TopicRuntimeStateKind kind, int code, @Nullable String reason,
+                          boolean keepHistory, boolean allowRetry) {
+            this.kind = kind;
+            this.code = code;
+            this.reason = reason;
+            this.keepHistory = keepHistory;
+            this.allowRetry = allowRetry;
+        }
+    }
+
+    enum LocalDetachReason {
+        NONE,
+        ACTIVITY_DESTROY,
+        TOPIC_SWITCH,
+        USER_LEAVE,
+        USER_DELETE
+    }
 
     private final BroadcastReceiver onNotificationClick = new BroadcastReceiver() {
         public void onReceive(Context context, Intent intent) {
@@ -179,6 +228,7 @@ public class MessageActivity extends BaseActivity
     private ComTopic<VxCard> mTopic = null;
     private TListener mTopicEventListener;
     private LoginEventListener mTinodeListener;
+    private MeListener mMeTopicListener;
     // Handler for sending {note what="read"} notifications after a READ_DELAY.
     private Handler mNoteReadHandler = null;
     private static final int NOTE_READ_ID = 1;
@@ -193,6 +243,9 @@ public class MessageActivity extends BaseActivity
     private Set<String> mDirtySubs = null;
     // Tracker of pinned changes to prevent endless loop.
     private int mPinHash = -1;
+    private TopicRuntimeState mRuntimeState =
+            new TopicRuntimeState(TopicRuntimeStateKind.LIVE, 200, null, false, false);
+    private LocalDetachReason mLocalDetachReason = LocalDetachReason.NONE;
 
     private static final int MESSAGES_LOADER_DEBOUNCE_MS = 80;
     private final Handler mMessagesLoaderHandler = new Handler(Looper.getMainLooper());
@@ -262,6 +315,7 @@ public class MessageActivity extends BaseActivity
 
         final Tinode tinode = Cache.getTinode();
         mTinodeListener = new LoginEventListener(tinode.isConnected());
+        mMeTopicListener = new MeListener();
         tinode.addListener(mTinodeListener);
 
         mNoteReadHandler = new NoteHandler(this);
@@ -276,6 +330,232 @@ public class MessageActivity extends BaseActivity
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
         startActivity(intent);
         finish();
+    }
+
+    private boolean isRuntimeHardState(@NonNull TopicRuntimeStateKind kind) {
+        return switch (kind) {
+            case REMOVED, EVICTED, DELETED, TEMP_UNAVAILABLE, ACCOUNT_BLOCKED, SESSION_KICKED -> true;
+            default -> false;
+        };
+    }
+
+    private TopicRuntimeState newRuntimeState(@NonNull TopicRuntimeStateKind kind, int code,
+                                              @Nullable String reason, boolean keepHistory, boolean allowRetry) {
+        return new TopicRuntimeState(kind, code, reason, keepHistory, allowRetry);
+    }
+
+    private void clearRuntimeState() {
+        mRuntimeState = newRuntimeState(TopicRuntimeStateKind.LIVE, 200, null, false, false);
+    }
+
+    TopicRuntimeState getRuntimeState() {
+        return mRuntimeState;
+    }
+
+    private void setRuntimeState(@NonNull TopicRuntimeState state) {
+        mRuntimeState = state;
+        renderRuntimeState();
+    }
+
+    void markTopicLocalDetach(@NonNull LocalDetachReason reason) {
+        mLocalDetachReason = reason;
+    }
+
+    private @NonNull LocalDetachReason consumeLocalDetachReason() {
+        LocalDetachReason reason = mLocalDetachReason;
+        mLocalDetachReason = LocalDetachReason.NONE;
+        return reason;
+    }
+
+    private @NonNull String defaultRuntimeReason(@NonNull TopicRuntimeState state) {
+        if (!TextUtils.isEmpty(state.reason)) {
+            return state.reason;
+        }
+        return switch (state.kind) {
+            case READONLY -> getString(R.string.runtime_state_readonly_message);
+            case MUTED -> getString(R.string.runtime_state_muted_message);
+            case REMOVED, EVICTED -> getString(R.string.runtime_state_removed_message);
+            case DELETED -> getString(R.string.runtime_state_deleted_message);
+            case TEMP_UNAVAILABLE -> getString(R.string.runtime_state_temp_unavailable_message);
+            case ACCOUNT_BLOCKED -> getString(R.string.runtime_state_account_blocked_message);
+            case SESSION_KICKED -> getString(R.string.runtime_state_session_kicked_message);
+            case LIVE -> "";
+        };
+    }
+
+    String getRuntimeComposerNotice() {
+        return switch (mRuntimeState.kind) {
+            case READONLY -> defaultRuntimeReason(mRuntimeState);
+            case MUTED -> defaultRuntimeReason(mRuntimeState);
+            case DELETED -> defaultRuntimeReason(mRuntimeState);
+            default -> getString(R.string.sending_disabled);
+        };
+    }
+
+    String getRuntimeReadNotice() {
+        return switch (mRuntimeState.kind) {
+            case REMOVED, EVICTED -> getString(R.string.runtime_state_removed_history_message);
+            case DELETED -> getString(R.string.runtime_state_deleted_history_message);
+            case TEMP_UNAVAILABLE -> defaultRuntimeReason(mRuntimeState);
+            default -> getString(R.string.messages_not_readable);
+        };
+    }
+
+    void applyRuntimeStateToToolbar() {
+        Toolbar toolbar = findViewById(R.id.toolbar);
+        if (toolbar == null) {
+            return;
+        }
+        if (mRuntimeState.kind == TopicRuntimeStateKind.READONLY || mRuntimeState.kind == TopicRuntimeStateKind.MUTED) {
+            toolbar.setSubtitle(defaultRuntimeReason(mRuntimeState));
+        }
+    }
+
+    private void refreshVisibleTopicUi() {
+        runOnUiThread(() -> {
+            Fragment fragment = UiUtils.getVisibleFragment(getSupportFragmentManager());
+            if (fragment instanceof DataSetChangeListener) {
+                ((DataSetChangeListener) fragment).notifyDataSetChanged();
+            } else if (fragment instanceof MessagesFragment) {
+                ((MessagesFragment) fragment).notifyDataSetChanged(true);
+            }
+            applyRuntimeStateToToolbar();
+        });
+    }
+
+    private void handleTopicSoftStateChange() {
+        if (isRuntimeHardState(mRuntimeState.kind)) {
+            return;
+        }
+        if (mTopic != null) {
+            UiUtils.setupToolbar(this, mTopic.getPub(), mTopicName, mTopic.getOnline(), mTopic.getLastSeen(),
+                    mTopic.isDeleted(), mTopic.getSubCnt());
+        }
+        refreshVisibleTopicUi();
+    }
+
+    private void showRuntimeStateFragment(@NonNull TopicRuntimeState state) {
+        Bundle args = new Bundle();
+        args.putString(STATE_ARG_KIND, state.kind.name());
+        args.putString(STATE_ARG_TITLE, switch (state.kind) {
+            case REMOVED, EVICTED -> getString(R.string.runtime_state_removed_title);
+            case DELETED -> getString(R.string.runtime_state_deleted_title);
+            case TEMP_UNAVAILABLE -> getString(R.string.runtime_state_temp_unavailable_title);
+            case ACCOUNT_BLOCKED -> getString(R.string.runtime_state_account_blocked_title);
+            case SESSION_KICKED -> getString(R.string.runtime_state_session_kicked_title);
+            default -> getString(R.string.topic_not_found_or_invalid);
+        });
+        args.putString(STATE_ARG_MESSAGE, defaultRuntimeReason(state));
+
+        if (state.keepHistory) {
+            args.putString(STATE_ARG_PRIMARY_LABEL, getString(R.string.runtime_action_view_history));
+            args.putString(STATE_ARG_PRIMARY_ACTION, STATE_ACTION_HISTORY);
+            args.putString(STATE_ARG_SECONDARY_LABEL, getString(R.string.runtime_action_back_to_chats));
+            args.putString(STATE_ARG_SECONDARY_ACTION, STATE_ACTION_BACK);
+        } else if (state.allowRetry) {
+            args.putString(STATE_ARG_PRIMARY_LABEL, getString(R.string.runtime_action_retry));
+            args.putString(STATE_ARG_PRIMARY_ACTION, STATE_ACTION_RETRY);
+            args.putString(STATE_ARG_SECONDARY_LABEL, getString(R.string.runtime_action_back_to_chats));
+            args.putString(STATE_ARG_SECONDARY_ACTION, STATE_ACTION_BACK);
+        } else if (state.kind == TopicRuntimeStateKind.ACCOUNT_BLOCKED) {
+            args.putString(STATE_ARG_PRIMARY_LABEL, getString(R.string.runtime_action_relogin));
+            args.putString(STATE_ARG_PRIMARY_ACTION, STATE_ACTION_RELOGIN);
+            args.putString(STATE_ARG_SECONDARY_LABEL, getString(R.string.runtime_action_back_to_chats));
+            args.putString(STATE_ARG_SECONDARY_ACTION, STATE_ACTION_BACK);
+        } else {
+            args.putString(STATE_ARG_PRIMARY_LABEL, getString(R.string.runtime_action_back_to_chats));
+            args.putString(STATE_ARG_PRIMARY_ACTION, STATE_ACTION_BACK);
+        }
+        getSupportFragmentManager().popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE);
+        showFragment(FRAGMENT_INVALID, args, false);
+    }
+
+    private void renderRuntimeState() {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        if (isRuntimeHardState(mRuntimeState.kind)) {
+            showRuntimeStateFragment(mRuntimeState);
+        } else {
+            Fragment visible = UiUtils.getVisibleFragment(getSupportFragmentManager());
+            if (!(visible instanceof MessagesFragment)) {
+                getSupportFragmentManager().popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE);
+                showFragment(FRAGMENT_MESSAGES, null, false);
+            }
+            handleTopicSoftStateChange();
+        }
+    }
+
+    private void refreshRuntimeStateFromTopic() {
+        if (mTopic == null) {
+            return;
+        }
+        if (mTopic.isDeleted()) {
+            setRuntimeState(newRuntimeState(TopicRuntimeStateKind.DELETED, 410, null, true, false));
+            return;
+        }
+        if (mTopic.isBlocked() || !mTopic.isWriter()) {
+            setRuntimeState(newRuntimeState(TopicRuntimeStateKind.READONLY, 403, null, false, false));
+            return;
+        }
+        clearRuntimeState();
+        handleTopicSoftStateChange();
+    }
+
+    private void handleTopicHardStateChange(@NonNull TopicRuntimeStateKind kind, int code,
+                                            @Nullable String reason, boolean keepHistory, boolean allowRetry) {
+        setRuntimeState(newRuntimeState(kind, code, reason, keepHistory, allowRetry));
+    }
+
+    void handleMissingTopicFromChild() {
+        if (isRuntimeHardState(mRuntimeState.kind)) {
+            renderRuntimeState();
+        } else {
+            handleTopicHardStateChange(TopicRuntimeStateKind.TEMP_UNAVAILABLE, 404,
+                    getString(R.string.runtime_state_topic_missing_message), false, true);
+        }
+    }
+
+    void handleRuntimeAction(@Nullable String action) {
+        if (TextUtils.isEmpty(action)) {
+            return;
+        }
+        switch (action) {
+            case STATE_ACTION_BACK:
+                navigateBackToChats();
+                break;
+            case STATE_ACTION_RETRY:
+                clearRuntimeState();
+                if (mMeTopicListener != null) {
+                    UiUtils.attachMeTopic(this, mMeTopicListener);
+                }
+                if (mTopicName != null) {
+                    changeTopic(mTopicName, true);
+                } else if (mTopic != null) {
+                    topicAttach();
+                }
+                break;
+            case STATE_ACTION_RELOGIN:
+                UiUtils.doLogout(this);
+                finish();
+                break;
+            case STATE_ACTION_HISTORY:
+                showFragment(FRAGMENT_MESSAGES, null, false);
+                refreshVisibleTopicUi();
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void handleAccountLoginFailure(int code, @Nullable String txt) {
+        if (code == 403) {
+            handleTopicHardStateChange(TopicRuntimeStateKind.ACCOUNT_BLOCKED, code, txt, false, false);
+        } else if (code == 401 || code == 404) {
+            handleTopicHardStateChange(TopicRuntimeStateKind.SESSION_KICKED, code, txt, false, true);
+        } else {
+            handleTopicHardStateChange(TopicRuntimeStateKind.TEMP_UNAVAILABLE, code, txt, false, true);
+        }
     }
 
     @Override
@@ -310,6 +590,11 @@ public class MessageActivity extends BaseActivity
             finish();
             return;
         }
+
+        if (mMeTopicListener == null) {
+            mMeTopicListener = new MeListener();
+        }
+        UiUtils.attachMeTopic(this, mMeTopicListener);
 
         // Resume message sender.
         mMessageSender.resume();
@@ -378,7 +663,7 @@ public class MessageActivity extends BaseActivity
 
             changed = true;
             if (mTopic != null) {
-                topicDetach(mTopic);
+                topicDetach(mTopic, LocalDetachReason.TOPIC_SWITCH);
             }
 
             mTopic = topic;
@@ -397,7 +682,8 @@ public class MessageActivity extends BaseActivity
                     Log.w(TAG, "New topic is a non-comm topic: " + mTopicName);
                     return false;
                 }
-                showFragment(FRAGMENT_INVALID, null, false);
+                handleTopicHardStateChange(TopicRuntimeStateKind.TEMP_UNAVAILABLE, 404,
+                        getString(R.string.runtime_state_topic_missing_message), false, true);
 
                 // Check if another fragment is already visible. If so, don't change it.
             } else if (forceReset || UiUtils.getVisibleFragment(getSupportFragmentManager()) == null) {
@@ -416,6 +702,8 @@ public class MessageActivity extends BaseActivity
         if (mTopic == null) {
             return true;
         }
+
+        clearRuntimeState();
 
         if (mTopic.isGrpType()) {
             Collection<Subscription<VxCard, PrivateType>> subs = mTopic.getSubscriptions();
@@ -525,9 +813,7 @@ public class MessageActivity extends BaseActivity
 
     private void topicAttach() {
         if (mTopic.isDeleted()) {
-            UiUtils.setupToolbar(this, mTopic.getPub(), mTopicName,
-                    false, null, true, 0);
-            maybeShowMessagesFragmentOnAttach();
+            handleTopicHardStateChange(TopicRuntimeStateKind.DELETED, 410, null, true, false);
             return;
         }
 
@@ -558,12 +844,14 @@ public class MessageActivity extends BaseActivity
                             return null;
                         }
                         runOnUiThread(() -> {
+                            clearRuntimeState();
                             Fragment fragment = maybeShowMessagesFragmentOnAttach();
                             if (fragment instanceof MessagesFragment) {
                                 UiUtils.setupToolbar(MessageActivity.this, mTopic.getPub(),
                                         mTopicName, mTopic.getOnline(), mTopic.getLastSeen(), mTopic.isDeleted(),
                                         mTopic.getSubCnt());
                             }
+                            refreshRuntimeStateFromTopic();
                         });
                         // Submit pending messages for processing: publish queued,
                         // delete marked for deletion.
@@ -579,7 +867,18 @@ public class MessageActivity extends BaseActivity
                             if (err instanceof ServerResponseException) {
                                 int code = ((ServerResponseException) err).getCode();
                                 if (code == 404) {
-                                    showFragment(FRAGMENT_INVALID, null, false);
+                                    handleTopicHardStateChange(
+                                            mTopic != null && mTopic.isDeleted() ?
+                                                    TopicRuntimeStateKind.DELETED : TopicRuntimeStateKind.REMOVED,
+                                            code, err.getMessage(), true, false);
+                                } else if (code == 403) {
+                                    setRuntimeState(newRuntimeState(TopicRuntimeStateKind.READONLY,
+                                            code, err.getMessage(), true, false));
+                                } else if (code == 401) {
+                                    handleAccountLoginFailure(code, err.getMessage());
+                                } else if (code == 502 || code == 503 || code == 504) {
+                                    handleTopicHardStateChange(TopicRuntimeStateKind.TEMP_UNAVAILABLE,
+                                            code, err.getMessage(), false, true);
                                 }
                             }
                         }
@@ -623,7 +922,7 @@ public class MessageActivity extends BaseActivity
     }
 
     // Clean up everything related to the topic being replaced of removed.
-    private void topicDetach(@Nullable ComTopic<VxCard> topic) {
+    private void topicDetach(@Nullable ComTopic<VxCard> topic, @NonNull LocalDetachReason reason) {
         if (mTypingAnimationTimer != null) {
             mTypingAnimationTimer.cancel();
             mTypingAnimationTimer = null;
@@ -631,7 +930,9 @@ public class MessageActivity extends BaseActivity
 
         if (topic != null) {
             topic.remListener(mTopicEventListener);
-            topic.leave();
+            if (topic.isAttached()) {
+                topic.leave();
+            }
         }
     }
 
@@ -642,7 +943,11 @@ public class MessageActivity extends BaseActivity
         mMessagesLoaderHandler.removeCallbacks(mMessagesLoaderRunnable);
 
         Cache.getTinode().removeListener(mTinodeListener);
-        topicDetach(mTopic);
+        MeTopic<VxCard> me = Cache.getTinode().getMeTopic();
+        if (me != null && mMeTopicListener != null) {
+            me.remListener(mMeTopicListener);
+        }
+        topicDetach(mTopic, LocalDetachReason.ACTIVITY_DESTROY);
         mTopic = null;
         mTopicName = null;
 
@@ -1161,16 +1466,8 @@ public class MessageActivity extends BaseActivity
             // noinspection SwitchStatementWithTooFewBranches
             switch (MsgServerPres.parseWhat(pres.what)) {
                 case ACS:
-                    runOnUiThread(() -> {
-                        Fragment fragment = UiUtils.getVisibleFragment(getSupportFragmentManager());
-                        if (fragment != null) {
-                            if (fragment instanceof DataSetChangeListener) {
-                                ((DataSetChangeListener) fragment).notifyDataSetChanged();
-                            } else if (fragment instanceof MessagesFragment) {
-                                ((MessagesFragment) fragment).notifyDataSetChanged(true);
-                            }
-                        }
-                    });
+                    refreshRuntimeStateFromTopic();
+                    refreshVisibleTopicUi();
                     break;
                 default:
                     Log.d(TAG, "Topic '" + mTopicName + "' onPres what='" + pres.what + "' (unhandled)");
@@ -1216,39 +1513,27 @@ public class MessageActivity extends BaseActivity
                     }
                 }
             }
-
+            refreshRuntimeStateFromTopic();
             runOnUiThread(() -> {
                 Fragment fragment = UiUtils.getVisibleFragment(getSupportFragmentManager());
-                if (fragment != null) {
-                    if (fragment instanceof DataSetChangeListener) {
-                        ((DataSetChangeListener) fragment).notifyDataSetChanged();
-                    } else if (fragment instanceof MessagesFragment) {
-                        MessagesFragment messages = (MessagesFragment) fragment;
-                        messages.notifyDataSetChanged(true);
-                        if (mDirtySubs != null && !mDirtySubs.isEmpty()) {
-                            messages.notifySenderInfoChanged(mDirtySubs);
-                            mDirtySubs.clear();
-                        }
+                if (fragment instanceof DataSetChangeListener) {
+                    ((DataSetChangeListener) fragment).notifyDataSetChanged();
+                } else if (fragment instanceof MessagesFragment) {
+                    MessagesFragment messages = (MessagesFragment) fragment;
+                    messages.notifyDataSetChanged(true);
+                    if (mDirtySubs != null && !mDirtySubs.isEmpty()) {
+                        messages.notifySenderInfoChanged(mDirtySubs);
+                        mDirtySubs.clear();
                     }
                 }
+                applyRuntimeStateToToolbar();
             });
         }
 
         @Override
         public void onMetaDesc(final Description<VxCard, PrivateType> desc) {
-            runOnUiThread(() -> {
-                Fragment fragment = UiUtils.getVisibleFragment(getSupportFragmentManager());
-                if (fragment != null && mTopic != null) {
-                    if (fragment instanceof DataSetChangeListener) {
-                        ((DataSetChangeListener) fragment).notifyDataSetChanged();
-                    } else if (fragment instanceof MessagesFragment) {
-                        UiUtils.setupToolbar(MessageActivity.this, mTopic.getPub(), mTopic.getName(),
-                                mTopic.getOnline(), mTopic.getLastSeen(), mTopic.isDeleted(), mTopic.getSubCnt());
-
-                        ((MessagesFragment) fragment).notifyDataSetChanged(true);
-                    }
-                }
-            });
+            refreshRuntimeStateFromTopic();
+            refreshVisibleTopicUi();
         }
 
         @Override
@@ -1289,9 +1574,95 @@ public class MessageActivity extends BaseActivity
                 if (mTopic != null) {
                     UiUtils.toolbarSetOnline(MessageActivity.this,
                         mTopic.getOnline(), mTopic.getLastSeen());
+                    applyRuntimeStateToToolbar();
                 }
             });
 
+        }
+
+        @Override
+        public void onLeave(boolean unsub, int code, String text) {
+            LocalDetachReason localReason = consumeLocalDetachReason();
+            if (localReason != LocalDetachReason.NONE) {
+                return;
+            }
+
+            if (code == 205 || "evicted".equals(text)) {
+                handleTopicHardStateChange(TopicRuntimeStateKind.EVICTED, code, text, true, false);
+            } else if ("term".equals(text)) {
+                handleTopicHardStateChange(TopicRuntimeStateKind.TEMP_UNAVAILABLE, code, text, false, true);
+            } else if (unsub) {
+                handleTopicHardStateChange(TopicRuntimeStateKind.REMOVED, code, text, true, false);
+            } else {
+                handleTopicHardStateChange(TopicRuntimeStateKind.TEMP_UNAVAILABLE, code, text, false, true);
+            }
+        }
+    }
+
+    private class MeListener extends UiUtils.MeEventListener {
+        private boolean isCurrentTopic(@Nullable String topicName) {
+            return !TextUtils.isEmpty(topicName) && TextUtils.equals(mTopicName, topicName);
+        }
+
+        @Override
+        public void onPres(MsgServerPres pres) {
+            if (pres == null) {
+                return;
+            }
+            MsgServerPres.What what = MsgServerPres.parseWhat(pres.what);
+            if (!isCurrentTopic(pres.src)) {
+                return;
+            }
+
+            switch (what) {
+                case GONE:
+                    handleTopicHardStateChange(
+                            mTopic != null && mTopic.isDeleted() ? TopicRuntimeStateKind.DELETED : TopicRuntimeStateKind.REMOVED,
+                            410, pres.what, true, false);
+                    break;
+                case ACS:
+                case UPD:
+                case ON:
+                case OFF:
+                    refreshRuntimeStateFromTopic();
+                    refreshVisibleTopicUi();
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        @Override
+        public void onMetaSub(Subscription<VxCard, PrivateType> sub) {
+            if (sub == null || !isCurrentTopic(sub.topic)) {
+                return;
+            }
+            if (sub.deleted != null) {
+                handleTopicHardStateChange(TopicRuntimeStateKind.REMOVED, 410, null, true, false);
+                return;
+            }
+            refreshRuntimeStateFromTopic();
+            refreshVisibleTopicUi();
+        }
+
+        @Override
+        public void onSubsUpdated() {
+            refreshRuntimeStateFromTopic();
+            refreshVisibleTopicUi();
+        }
+
+        @Override
+        public void onContUpdated(String contact) {
+            if (!isCurrentTopic(contact)) {
+                return;
+            }
+            refreshRuntimeStateFromTopic();
+            refreshVisibleTopicUi();
+        }
+
+        @Override
+        public void onSubscriptionError(Exception ex) {
+            Log.w(TAG, "me topic subscription failed", ex);
         }
     }
 
@@ -1303,9 +1674,29 @@ public class MessageActivity extends BaseActivity
         @Override
         public void onLogin(int code, String txt) {
             super.onLogin(code, txt);
+            if (code >= 200 && code < 300) {
+                UiUtils.attachMeTopic(MessageActivity.this, mMeTopicListener);
+                topicAttach();
+            } else {
+                handleAccountLoginFailure(code, txt);
+            }
+        }
 
-            UiUtils.attachMeTopic(MessageActivity.this, null);
-            topicAttach();
+        @Override
+        public void onMessage(ServerMessage msg) {
+            if (msg != null && msg.ctrl != null && msg.ctrl.code == 205 &&
+                    "evicted".equals(msg.ctrl.text) && TextUtils.isEmpty(msg.ctrl.topic)) {
+                handleTopicHardStateChange(TopicRuntimeStateKind.SESSION_KICKED, msg.ctrl.code,
+                        msg.ctrl.text, false, true);
+            }
+        }
+
+        @Override
+        public void onDisconnect(boolean byServer, int code, String reason) {
+            super.onDisconnect(byServer, code, reason);
+            if (byServer && code == 205) {
+                handleTopicHardStateChange(TopicRuntimeStateKind.SESSION_KICKED, code, reason, false, true);
+            }
         }
     }
 }

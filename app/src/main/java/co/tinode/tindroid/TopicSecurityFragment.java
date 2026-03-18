@@ -133,7 +133,7 @@ public class TopicSecurityFragment extends Fragment implements MessageActivity.D
 
         final View fragment = getView();
         if (fragment == null) {
-            activity.finish();
+            ((MessageActivity) activity).handleMissingTopicFromChild();
             return;
         }
 
@@ -142,7 +142,7 @@ public class TopicSecurityFragment extends Fragment implements MessageActivity.D
         mTopic = (ComTopic<VxCard>) Cache.getTinode().getTopic(name);
         if (mTopic == null) {
             Log.d(TAG, "TopicPermissions resumed with null topic.");
-            activity.finish();
+            ((MessageActivity) activity).handleMissingTopicFromChild();
             return;
         }
 
@@ -216,6 +216,13 @@ public class TopicSecurityFragment extends Fragment implements MessageActivity.D
     }
 
     public void notifyDataSetChanged() {
+        if (mTopic == null) {
+            Activity activity = getActivity();
+            if (activity instanceof MessageActivity) {
+                ((MessageActivity) activity).handleMissingTopicFromChild();
+            }
+            return;
+        }
         if (mTopic.isGrpType()) {
             return;
         }
@@ -235,6 +242,13 @@ public class TopicSecurityFragment extends Fragment implements MessageActivity.D
 
     // Called when topic description is changed.
     private void notifyContentChanged() {
+        if (mTopic == null) {
+            Activity activity = getActivity();
+            if (activity instanceof MessageActivity) {
+                ((MessageActivity) activity).handleMissingTopicFromChild();
+            }
+            return;
+        }
         View fragment = getView();
         if (fragment == null) {
             return;
@@ -269,8 +283,14 @@ public class TopicSecurityFragment extends Fragment implements MessageActivity.D
 
         confirmBuilder.setPositiveButton(android.R.string.yes, (dialog, which) -> {
             PromisedReply<ServerMessage> response = null;
+            MessageActivity host = (MessageActivity) activity;
             switch (what) {
                 case ACTION_LEAVE:
+                    host.markTopicLocalDetach(MessageActivity.LocalDetachReason.USER_LEAVE);
+                    response = mTopic.delete(true);
+                    break;
+                case ACTION_DELETE:
+                    host.markTopicLocalDetach(MessageActivity.LocalDetachReason.USER_DELETE);
                     response = mTopic.delete(true);
                     break;
                 case ACTION_REPORT:

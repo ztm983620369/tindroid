@@ -74,12 +74,21 @@
         app:backgroundTint="@color/button_background" />
 
     <Button
+        android:id="@+id/signUp"
+        style="?attr/buttonBarButtonStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/sign_up"
+        android:layout_below="@+id/signIn"
+        android:layout_centerHorizontal="true" />
+
+    <Button
         android:id="@+id/forgotPassword"
         style="?attr/buttonBarButtonStyle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/forgot_password"
-        android:layout_below="@+id/signIn"
+        android:layout_below="@+id/signUp"
         android:layout_centerHorizontal="true" />
 
     <LinearLayout

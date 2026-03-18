@@ -122,7 +122,7 @@ public class TopicGeneralFragment extends Fragment implements MenuProvider, Util
         mTopic = (ComTopic<VxCard>) Cache.getTinode().getTopic(name);
         if (mTopic == null) {
             Log.d(TAG, "TopicPermissions resumed with null topic.");
-            activity.finish();
+            ((MessageActivity) activity).handleMissingTopicFromChild();
             return;
         }
 
@@ -223,6 +223,10 @@ public class TopicGeneralFragment extends Fragment implements MenuProvider, Util
     public void notifyDataSetChanged() {
         final Activity activity = getActivity();
         if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+            return;
+        }
+        if (mTopic == null) {
+            ((MessageActivity) activity).handleMissingTopicFromChild();
             return;
         }
 

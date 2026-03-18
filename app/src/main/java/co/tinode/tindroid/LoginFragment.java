@@ -52,6 +52,7 @@ public class LoginFragment extends Fragment implements MenuProvider, View.OnClic
 
         View fragment = inflater.inflate(R.layout.fragment_login, container, false);
         fragment.findViewById(R.id.signIn).setOnClickListener(this);
+        fragment.findViewById(R.id.signUp).setOnClickListener(this);
         fragment.findViewById(R.id.forgotPassword).setVisibility(View.GONE);
         return fragment;
     }
@@ -115,6 +116,10 @@ public class LoginFragment extends Fragment implements MenuProvider, View.OnClic
 
         if (v.getId() == R.id.forgotPassword) {
             parent.showFragment(LoginActivity.FRAGMENT_RESET, null);
+            return;
+        }
+        if (v.getId() == R.id.signUp) {
+            parent.showFragment(LoginActivity.FRAGMENT_SIGNUP, null);
             return;
         }
 
@@ -181,10 +186,6 @@ public class LoginFragment extends Fragment implements MenuProvider, View.OnClic
     @Override
     public void onCreateMenu(@NonNull Menu menu, @NonNull MenuInflater menuInflater) {
         menuInflater.inflate(R.menu.menu_login, menu);
-        MenuItem signup = menu.findItem(R.id.action_signup);
-        if (signup != null) {
-            signup.setVisible(false);
-        }
     }
 
     @Override

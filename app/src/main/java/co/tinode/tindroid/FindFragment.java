@@ -497,7 +497,14 @@ public class FindFragment extends Fragment implements UiUtils.ProgressIndicator,
         @Override
         public void onLogin(int code, String txt) {
             super.onLogin(code, txt);
-            topicAttach();
+            if (code >= 200 && code < 300) {
+                topicAttach();
+            } else if (code == 401 || code == 403 || code == 404) {
+                FragmentActivity activity = getActivity();
+                if (activity != null) {
+                    UiUtils.doLogout(activity);
+                }
+            }
         }
     }
 }

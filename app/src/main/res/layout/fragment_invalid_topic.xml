@@ -1,22 +1,59 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/message_view_bkg"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="24dp"
     tools:context="co.tinode.tindroid.MessagesFragment">
 
-    <TextView
-        style="@style/textPrimary"
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_centerHorizontal="true"
-        android:layout_centerVertical="true"
         android:background="@drawable/bubble"
         android:backgroundTint="?android:colorBackground"
-        android:padding="12dp"
-        android:gravity="center"
-        android:text="@string/topic_not_found_or_invalid" />
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:padding="16dp">
 
-</RelativeLayout>
+        <TextView
+            android:id="@+id/stateTitle"
+            style="@style/textPrimary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="@string/topic_not_found_or_invalid"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/stateMessage"
+            style="@style/textSecondary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:text="@string/topic_not_found_or_invalid" />
+
+        <Button
+            android:id="@+id/statePrimaryButton"
+            style="?attr/buttonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/runtime_action_back_to_chats"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/stateSecondaryButton"
+            style="?attr/buttonBarButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/runtime_action_retry"
+            android:visibility="gone" />
+    </LinearLayout>
+
+</LinearLayout>
